@@ -1,0 +1,122 @@
+name: Release
+
+on:
+  push:
+    tags:
+      - 'v*'
+
+permissions:
+  contents: write
+
+jobs:
+  release:
+    runs-on: ubuntu-latest
+    steps:
+    - uses: actions/checkout@v4
+      with:
+        fetch-depth: 0
+
+    - name: Set up Go
+      uses: actions/setup-go@v4
+      with:
+        go-version: '1.21'
+
+    - name: Get version
+      id: version
+      run: echo "VERSION=${GITHUB_REF#refs/tags/}" >> $GITHUB_OUTPUT
+
+    - name: Build binaries
+      run: |
+        # Build for all platforms
+        platforms=(
+          "linux/amd64"
+          "linux/arm64"
+          "darwin/amd64"
+          "darwin/arm64"
+          "windows/amd64"
+        )
+        
+        mkdir -p dist
+        
+        for platform in "${platforms[@]}"; do
+          IFS='/' read -r GOOS GOARCH <<< "$platform"
+          
+          if [ "$GOOS" = "windows" ]; then
+            output_name="hpn-${GOOS}-${GOARCH}.exe"
+          else
+            output_name="hpn-${GOOS}-${GOARCH}"
+          fi
+          
+          echo "Building ${output_name}..."
+          
+          GOOS=${GOOS} GOARCH=${GOARCH} CGO_ENABLED=0 go build \
+            -trimpath \
+            -ldflags "-X main.version=${{ steps.version.outputs.VERSION }} -X main.commit=${{ github.sha }} -X main.date=$(date -u +%Y-%m-%dT%H:%M:%SZ) -s -w" \
+            -o dist/${output_name} \
+            ./cmd/hpn
+          
+          # Make executable on Unix-like systems
+          if [[ "${GOOS}" != "windows" ]]; then
+            chmod +x dist/${output_name}
+          fi
+        done
+
+    - name: Create packages
+      run: |
+        cd dist
+        
+        # Create tar.gz packages for Unix-like systems
+        tar -czf hpn-${{ steps.version.outputs.VERSION }}-linux-amd64.tar.gz \
+          hpn-linux-amd64 ../README.md ../LICENSE ../config.yaml.example ../docs/
+        
+        tar -czf hpn-${{ steps.version.outputs.VERSION }}-linux-arm64.tar.gz \
+          hpn-linux-arm64 ../README.md ../LICENSE ../config.yaml.example ../docs/
+        
+        tar -czf hpn-${{ steps.version.outputs.VERSION }}-darwin-amd64.tar.gz \
+          hpn-darwin-amd64 ../README.md ../LICENSE ../config.yaml.example ../docs/
+        
+        tar -czf hpn-${{ steps.version.outputs.VERSION }}-darwin-arm64.tar.gz \
+          hpn-darwin-arm64 ../README.md ../LICENSE ../config.yaml.example ../docs/
+        
+        # Create zip package for Windows
+        zip -r hpn-${{ steps.version.outputs.VERSION }}-windows-amd64.zip \
+          hpn-windows-amd64.exe ../README.md ../LICENSE ../config.yaml.example ../docs/
+
+    - name: Generate release notes
+      run: |
+        echo "# Harpoon ${{ steps.version.outputs.VERSION }}" > release-notes.md
+        echo "" >> release-notes.md
+        echo "## What's New" >> release-notes.md
+        echo "" >> release-notes.md
+        echo "This is the first stable release of Harpoon - a powerful cloud-native container image management tool." >> release-notes.md
+        echo "" >> release-notes.md
+        echo "### Key Features" >> release-notes.md
+        echo "- Multi-container runtime support (Docker, Podman, Nerdctl)" >> release-notes.md
+        echo "- Flexible operation modes for different deployment scenarios" >> release-notes.md
+        echo "- Cross-platform support (Linux, macOS, Windows)" >> release-notes.md
+        echo "- Configuration management with YAML files" >> release-notes.md
+        echo "- Proxy support for corporate environments" >> release-notes.md
+        echo "- Batch operations for bulk image processing" >> release-notes.md
+        echo "" >> release-notes.md
+        echo "### Download" >> release-notes.md
+        echo "" >> release-notes.md
+        echo "Choose the appropriate binary for your platform:" >> release-notes.md
+        echo "" >> release-notes.md
+        echo "| Platform | Architecture | Download |" >> release-notes.md
+        echo "|----------|-------------|----------|" >> release-notes.md
+        echo "| Linux | AMD64 | [hpn-${{ steps.version.outputs.VERSION }}-linux-amd64.tar.gz](https://github.com/ghostwritten/harpoon/releases/download/${{ steps.version.outputs.VERSION }}/hpn-${{ steps.version.outputs.VERSION }}-linux-amd64.tar.gz) |" >> release-notes.md
+        echo "| Linux | ARM64 | [hpn-${{ steps.version.outputs.VERSION }}-linux-arm64.tar.gz](https://github.com/ghostwritten/harpoon/releases/download/${{ steps.version.outputs.VERSION }}/hpn-${{ steps.version.outputs.VERSION }}-linux-arm64.tar.gz) |" >> release-notes.md
+        echo "| macOS | Intel | [hpn-${{ steps.version.outputs.VERSION }}-darwin-amd64.tar.gz](https://github.com/ghostwritten/harpoon/releases/download/${{ steps.version.outputs.VERSION }}/hpn-${{ steps.version.outputs.VERSION }}-darwin-amd64.tar.gz) |" >> release-notes.md
+        echo "| macOS | Apple Silicon | [hpn-${{ steps.version.outputs.VERSION }}-darwin-arm64.tar.gz](https://github.com/ghostwritten/harpoon/releases/download/${{ steps.version.outputs.VERSION }}/hpn-${{ steps.version.outputs.VERSION }}-darwin-arm64.tar.gz) |" >> release-notes.md
+        echo "| Windows | AMD64 | [hpn-${{ steps.version.outputs.VERSION }}-windows-amd64.zip](https://github.com/ghostwritten/harpoon/releases/download/${{ steps.version.outputs.VERSION }}/hpn-${{ steps.version.outputs.VERSION }}-windows-amd64.zip) |" >> release-notes.md
+
+    - name: Create Release
+      uses: softprops/action-gh-release@v1
+      with:
+        files: |
+          dist/hpn-*
+        body_path: release-notes.md
+        draft: false
+        prerelease: false
+      env:
+        GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}

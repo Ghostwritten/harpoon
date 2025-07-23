@@ -1,0 +1,43 @@
+# Harpoon (hpn) Configuration File Example
+# Copy this file to ~/.hpn/config.yaml or /etc/hpn/config.yaml
+
+# Default registry for push operations
+registry: registry.k8s.local
+
+# Default project namespace
+project: library
+
+# Proxy configuration
+proxy:
+  http: http://192.168.21.101:7890
+  https: http://192.168.21.101:7890
+  enabled: true
+
+# Container runtime settings
+runtime:
+  preferred: docker  # docker, podman, or nerdctl
+  timeout: 5m
+  retry:
+    max_attempts: 3
+    delay: 1s
+    max_delay: 30s
+
+# Logging configuration
+logging:
+  level: info        # debug, info, warn, error
+  format: text       # text or json
+  file: ./hpn.log    # log file path (optional)
+  console: true      # output to console
+  timestamp: true    # include timestamps
+  colors: true       # colored output
+
+# Parallel processing settings
+parallel:
+  max_workers: 5     # maximum concurrent operations
+  auto_adjust: true  # automatically adjust based on system resources
+
+# Default operation modes
+modes:
+  save_mode: 1       # 1=current dir, 2=./images/, 3=./images/<project>/
+  load_mode: 1       # 1=current dir, 2=./images/, 3=recursive ./images/*/
+  push_mode: 1       # 1=registry/image:tag, 2=registry/project/image:tag, 3=preserve path

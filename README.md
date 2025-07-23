@@ -1,378 +1,233 @@
 # Harpoon 🎯
 
 [![License](https://img.shields.io/badge/license-MIT-blue.svg)](LICENSE)
-[![Version](https://img.shields.io/badge/version-1.2-green.svg)](releases)
-[![Shell](https://img.shields.io/badge/shell-bash-orange.svg)](README.md)
+[![Go Version](https://img.shields.io/badge/go-1.19+-blue.svg)](https://golang.org)
+[![Version](https://img.shields.io/badge/version-v1.0-green.svg)](releases)
 
-**Harpoon** is a powerful cloud-native container image management tool designed specifically for Kubernetes environments. It provides flexible image pulling, saving, loading, and pushing capabilities with multiple operation modes to accommodate different deployment scenarios.
-
-> 🚀 **Future Roadmap**: Harpoon will be rewritten in Go, providing the `hpn` CLI tool to bring enhanced container image management capabilities to the cloud-native ecosystem.
+**Harpoon** is a powerful cloud-native container image management tool designed for Kubernetes environments and enterprise container workflows. It provides flexible image pulling, saving, loading, and pushing capabilities with multiple operation modes.
 
 ## 🌟 Features
 
 - **Multi-Container Runtime Support**: Compatible with Docker, Podman, and Nerdctl
 - **Flexible Operation Modes**: Each operation supports multiple modes for different scenarios
+- **Cross-Platform**: Native Go binary for Linux, macOS, and Windows
+- **Configuration Management**: YAML config files with environment variable overrides
 - **Proxy Support**: Built-in HTTP/HTTPS proxy configuration
-- **Comprehensive Logging**: Colorized log output with file logging support
 - **Batch Operations**: Support for bulk image processing
 - **Private Registry Support**: Complete private image registry push functionality
 
-## 📦 Installation
+## 🚀 Installation
+
+### Quick Install (Recommended)
 
 ```bash
-# Clone the repository
-git clone https://github.com/yourusername/harpoon.git
-cd harpoon
+# Install latest version
+curl -fsSL https://raw.githubusercontent.com/ghostwritten/harpoon/main/install.sh | bash
 
-# Grant execute permissions
-chmod +x images.sh
+# Or with wget
+wget -qO- https://raw.githubusercontent.com/ghostwritten/harpoon/main/install.sh | bash
 ```
 
-## 🚀 Quick Start
+### Download Binary
+
+Choose your platform:
+
+| Platform | Architecture | Download Command |
+|----------|-------------|------------------|
+| Linux | AMD64 | `wget https://github.com/ghostwritten/harpoon/releases/latest/download/hpn-linux-amd64` |
+| Linux | ARM64 | `wget https://github.com/ghostwritten/harpoon/releases/latest/download/hpn-linux-arm64` |
+| macOS | Intel | `wget https://github.com/ghostwritten/harpoon/releases/latest/download/hpn-darwin-amd64` |
+| macOS | Apple Silicon | `wget https://github.com/ghostwritten/harpoon/releases/latest/download/hpn-darwin-arm64` |
+| Windows | AMD64 | Download `hpn-windows-amd64.exe` from releases page |
+
+After download:
+```bash
+chmod +x hpn-*
+sudo mv hpn-* /usr/local/bin/hpn
+```
+
+### Build from Source
+
+```bash
+git clone https://github.com/ghostwritten/harpoon.git
+cd harpoon
+go build -o hpn ./cmd/hpn
+```
+
+## 🔧 Quick Start
 
 ### Basic Usage
 
 ```bash
-./images.sh -a <action> -f <image_list> [options]
+# Create image list
+echo "nginx:latest" > images.txt
+echo "redis:alpine" >> images.txt
+
+# Pull images
+hpn -a pull -f images.txt
+
+# Save to tar files
+hpn -a save -f images.txt --save-mode 2
+
+# Load from tar files
+hpn -a load --load-mode 2
+
+# Push to private registry
+hpn -a push -f images.txt -r registry.example.com -p myproject --push-mode 2
 ```
 
-### Parameters
+## 📖 Command Reference
 
-| Parameter | Description | Required |
-|-----------|-------------|----------|
-| `-a, --action` | Action type: pull/save/load/push | ✅ |
-| `-f, --file` | Image list file | ✅ (for pull/save/push) |
-| `-r, --registry` | Target registry address (default: registry.k8s.local) | ❌ |
-| `-p, --project` | Target project namespace (default: library) | ❌ |
-| `--push-mode` | Push mode (1-3, default: 1) | ❌ |
-| `--load-mode` | Load mode (1-3, default: 1) | ❌ |
-| `--save-mode` | Save mode (1-3, default: 1) | ❌ |
-
-## 📋 Detailed Usage Scenarios
-
-### Scenario 1: Basic Image Pull and Save
-
-**Use Case**: Preparing base container images for offline environments
-
+### Syntax
 ```bash
-# 1. Create image list file
-cat > base-images.txt << EOF
-nginx:1.21
-redis:7.0
-mysql:8.0
-node:18-alpine
-python:3.11-slim
-EOF
-
-# 2. Pull images
-./images.sh -a pull -f base-images.txt
-
-# 3. Save to current directory
-./images.sh -a save -f base-images.txt --save-mode 1
-
-# 4. Check generated files
-ls -la *.tar
-# Expected output:
-# docker.io_nginx_1.21.tar
-# docker.io_redis_7.0.tar
-# docker.io_mysql_8.0.tar
-# ...
+hpn -a <action> -f <image_list> [options]
 ```
 
-### Scenario 2: Kubernetes Cluster Image Management
+### Actions
+- `pull` - Pull images from external registry
+- `save` - Save images into tar files
+- `load` - Load images from tar files
+- `push` - Push images to private registry
 
-**Use Case**: Preparing system images for Kubernetes clusters
+### Options
+- `-a, --action` - Action (required)
+- `-f, --file` - Image list file (required for pull/save/push)
+- `-r, --registry` - Target registry (default from config)
+- `-p, --project` - Target project namespace (default from config)
+- `-c, --config` - Config file path
 
-```bash
-# 1. Create k8s component image list
-cat > k8s-images.txt << EOF
-k8s.gcr.io/kube-apiserver:v1.25.0
-k8s.gcr.io/kube-controller-manager:v1.25.0
-k8s.gcr.io/kube-scheduler:v1.25.0
-k8s.gcr.io/kube-proxy:v1.25.0
-k8s.gcr.io/pause:3.8
-k8s.gcr.io/etcd:3.5.4-0
-k8s.gcr.io/coredns/coredns:v1.9.3
-EOF
+### Operation Modes
 
-# 2. Pull images (using proxy)
-export http_proxy=http://192.168.21.101:7890
-export https_proxy=http://192.168.21.101:7890
-./images.sh -a pull -f k8s-images.txt
+| Mode | Save | Load | Push |
+|------|------|------|------|
+| 1 | Current directory | Current directory | `registry/image:tag` |
+| 2 | `./images/` | `./images/` | `registry/project/image:tag` |
+| 3 | `./images/<project>/` | Recursive `./images/*/` | Preserve original path |
 
-# 3. Save by project (mode 3)
-./images.sh -a save -f k8s-images.txt --save-mode 3
+## ⚙️ Configuration
 
-# 4. Directory structure
-tree images/
-# images/
-# ├── kube-apiserver/
-# │   └── k8s.gcr.io_kube-apiserver_kube-apiserver_v1.25.0.tar
-# ├── kube-controller-manager/
-# │   └── k8s.gcr.io_kube-controller-manager_kube-controller-manager_v1.25.0.tar
-# └── ...
-```
+### Config File
 
-### Scenario 3: Air-Gapped Environment Deployment
-
-**Use Case**: Deploying applications in environments without network access
-
-```bash
-# Prepare in networked environment
-# 1. Application image list
-cat > app-images.txt << EOF
-nginx:1.21
-postgresql:13
-redis:7.0-alpine
-busybox:1.35
-EOF
-
-# 2. Pull and save to images directory
-./images.sh -a pull -f app-images.txt
-./images.sh -a save -f app-images.txt --save-mode 2
-
-# 3. Package for transfer to air-gapped environment
-tar -czf offline-images.tar.gz images/
-
-# In air-gapped environment
-# 4. Extract and load
-tar -xzf offline-images.tar.gz
-./images.sh -a load --load-mode 2
-
-# 5. Verify image loading
-docker images | grep -E "(nginx|postgresql|redis|busybox)"
-```
-
-### Scenario 4: Private Registry Push
-
-**Use Case**: Pushing images to enterprise private registry
-
-```bash
-# 1. Prepare enterprise application images
-cat > enterprise-images.txt << EOF
-nginx:1.21
-redis:7.0
-mysql:8.0
-java:openjdk-17
-EOF
-
-# 2. Pull public images
-./images.sh -a pull -f enterprise-images.txt
-
-# 3. Push to private registry - Mode 1 (flat structure)
-./images.sh -a push -f enterprise-images.txt \
-  -r harbor.company.com \
-  --push-mode 1
-
-# Result: harbor.company.com/nginx:1.21
-#         harbor.company.com/redis:7.0
-
-# 4. Push to private registry - Mode 2 (project namespace)
-./images.sh -a push -f enterprise-images.txt \
-  -r harbor.company.com \
-  -p production \
-  --push-mode 2
-
-# Result: harbor.company.com/production/nginx:1.21
-#         harbor.company.com/production/redis:7.0
-
-# 5. Push to private registry - Mode 3 (preserve original project path)
-./images.sh -a push -f enterprise-images.txt \
-  -r harbor.company.com \
-  --push-mode 3
-
-# Result: harbor.company.com/library/nginx:1.21 (if original was docker.io/library/nginx:1.21)
-```
-
-### Scenario 5: CI/CD Pipeline Integration
-
-**Use Case**: Integration with GitLab CI/CD
+Create `~/.hpn/config.yaml`:
 
 ```yaml
-# .gitlab-ci.yml
-stages:
-  - prepare
-  - deploy
-
-prepare-images:
-  stage: prepare
-  script:
-    - chmod +x images.sh
-    - ./images.sh -a pull -f deployment/images.txt
-    - ./images.sh -a save -f deployment/images.txt --save-mode 2
-    - tar -czf images-${CI_COMMIT_SHA}.tar.gz images/
-  artifacts:
-    paths:
-      - images-${CI_COMMIT_SHA}.tar.gz
-    expire_in: 1 day
-
-deploy-to-k8s:
-  stage: deploy
-  script:
-    - tar -xzf images-${CI_COMMIT_SHA}.tar.gz
-    - ./images.sh -a load --load-mode 2
-    - ./images.sh -a push -f deployment/images.txt -r ${HARBOR_REGISTRY} -p ${PROJECT_NAME} --push-mode 2
-    - kubectl apply -f k8s/
+registry: registry.k8s.local
+project: library
+proxy:
+  http: http://proxy.company.com:8080
+  https: http://proxy.company.com:8080
+  enabled: true
+runtime:
+  preferred: docker
+  timeout: 5m
+logging:
+  level: info
+  format: text
+parallel:
+  max_workers: 5
+modes:
+  save_mode: 2
+  load_mode: 2
+  push_mode: 2
 ```
 
-### Scenario 6: Multi-Architecture Image Handling
-
-**Use Case**: Handling ARM64 and AMD64 architecture images
+### Environment Variables
 
 ```bash
-# 1. Multi-architecture image list
-cat > multi-arch-images.txt << EOF
-nginx:1.21
-redis:7.0-alpine
-node:18-alpine
-python:3.11-slim
-EOF
-
-# 2. Pull current architecture images
-./images.sh -a pull -f multi-arch-images.txt
-
-# 3. Save by architecture
-mkdir -p images/amd64 images/arm64
-./images.sh -a save -f multi-arch-images.txt --save-mode 2
-
-# 4. Push to multi-architecture private registry
-./images.sh -a push -f multi-arch-images.txt \
-  -r registry.internal.com \
-  -p multi-arch \
-  --push-mode 2
+export HPN_REGISTRY=registry.example.com
+export HPN_PROJECT=myproject
+export HPN_PROXY_HTTP=http://proxy.example.com:8080
 ```
 
-### Scenario 7: Disaster Recovery
+## 🔨 Building
 
-**Use Case**: Rapid recovery of critical service images
+### Cross-Platform Build
 
 ```bash
-# 1. Create critical service image manifest
-cat > critical-images.txt << EOF
-nginx:1.21
-postgresql:13
-redis:7.0
-rabbitmq:3.11-management
-elasticsearch:8.5.0
-EOF
+# Current platform
+go build -o hpn ./cmd/hpn
 
-# 2. Regular image backup
-./images.sh -a pull -f critical-images.txt
-./images.sh -a save -f critical-images.txt --save-mode 2
-cp -r images/ /backup/container-images-$(date +%Y%m%d)/
+# Specific platforms
+GOOS=linux GOARCH=amd64 go build -o hpn-linux-amd64 ./cmd/hpn
+GOOS=linux GOARCH=arm64 go build -o hpn-linux-arm64 ./cmd/hpn
+GOOS=darwin GOARCH=amd64 go build -o hpn-darwin-amd64 ./cmd/hpn
+GOOS=darwin GOARCH=arm64 go build -o hpn-darwin-arm64 ./cmd/hpn
+GOOS=windows GOARCH=amd64 go build -o hpn-windows-amd64.exe ./cmd/hpn
 
-# 3. Quick loading during disaster recovery
-./images.sh -a load --load-mode 2
-docker images | grep -E "(nginx|postgresql|redis|rabbitmq|elasticsearch)"
+# Using Makefile
+make build-all    # All platforms
+make build-linux  # Linux AMD64
 
-# 4. Rapid deployment to new environment
-./images.sh -a push -f critical-images.txt \
-  -r disaster-recovery-registry.com \
-  -p emergency \
-  --push-mode 2
+# Using build script
+./build.sh all    # All platforms
+./build.sh linux  # Linux AMD64
 ```
 
-## 🔧 Advanced Configuration
+### Supported Platforms
 
-### Proxy Settings
+| OS | Architecture | Status |
+|---|---|---|
+| Linux | AMD64 | ✅ Tested |
+| Linux | ARM64 | ✅ Tested |
+| macOS | AMD64 (Intel) | ✅ Tested |
+| macOS | ARM64 (Apple Silicon) | ✅ Tested |
+| Windows | AMD64 | ✅ Tested |
 
+## 📋 Use Cases
+
+### Kubernetes Cluster Setup
 ```bash
-# Set in script or environment variables
-export http_proxy=http://proxy.company.com:8080
-export https_proxy=http://proxy.company.com:8080
-
-# Or modify default values in script
-http_proxy=${http_proxy:-"http://your-proxy:port"}
-https_proxy=${https_proxy:-"http://your-proxy:port"}
+# Pull K8s system images
+hpn -a pull -f k8s-system-images.txt
+hpn -a save -f k8s-system-images.txt --save-mode 2
 ```
 
-### Container Runtime Configuration
+### Air-Gapped Deployment
+```bash
+# Prepare images for offline environment
+hpn -a pull -f production-images.txt
+hpn -a save -f production-images.txt --save-mode 2
+tar -czf offline-images.tar.gz images/
+```
 
-The script automatically detects available container runtime with priority order:
-1. Docker
-2. Podman  
-3. Nerdctl
-
-For Nerdctl, the script automatically adds the `--insecure-registry` parameter.
-
-## 📊 Operation Modes Explained
-
-### Save Modes
-- **Mode 1**: Save to current directory (default)
-- **Mode 2**: Save to `./images/` directory
-- **Mode 3**: Save to `./images/<project>/` organized by project
-
-### Load Modes
-- **Mode 1**: Load all `.tar` files from current directory (default)
-- **Mode 2**: Load all `.tar` files from `./images/` directory
-- **Mode 3**: Recursively load `.tar` files from `./images/*/` subdirectories
-
-### Push Modes
-- **Mode 1**: Push as `registry/image:tag` (default)
-- **Mode 2**: Push as `registry/project/image:tag`
-- **Mode 3**: Push preserving original project path
+### Private Registry Migration
+```bash
+# Migrate images to private registry
+hpn -a pull -f public-images.txt
+hpn -a push -f public-images.txt -r harbor.company.com -p production --push-mode 2
+```
 
 ## 🐛 Troubleshooting
 
 ### Common Issues
 
-1. **Permission Issues**
+1. **Binary won't execute**
    ```bash
-   sudo chmod +x images.sh
-   # Or modify docker user group permissions
-   sudo usermod -aG docker $USER
+   chmod +x hpn
    ```
 
-2. **Proxy Connection Issues**
+2. **Container runtime not found**
    ```bash
-   # Check proxy connection
-   curl -I --proxy http://192.168.21.101:7890 https://docker.io
+   # Install Docker, Podman, or Nerdctl
+   curl -fsSL https://get.docker.com | sh
    ```
 
-3. **Insufficient Disk Space**
+3. **Network issues**
    ```bash
-   # Clean unused images
-   docker system prune -a
-   ```
-
-4. **Image Pull Timeout**
-   ```bash
-   # Increase Docker daemon timeout configuration
-   # /etc/docker/daemon.json
-   {
-     "max-concurrent-downloads": 3,
-     "max-download-attempts": 5
-   }
+   # Configure proxy
+   export HPN_PROXY_HTTP=http://proxy.example.com:8080
    ```
 
 ## 🤝 Contributing
 
-Issues and Pull Requests are welcome!
-
 1. Fork the repository
-2. Create a feature branch (`git checkout -b feature/AmazingFeature`)
-3. Commit your changes (`git commit -m 'Add some AmazingFeature'`)
-4. Push to the branch (`git push origin feature/AmazingFeature`)
-5. Open a Pull Request
-
-## 📋 TODO
-
-- [ ] Rewrite in Go (`hpn` CLI tool)
-- [ ] Support image signature verification
-- [ ] Add image scanning functionality
-- [ ] Support OCI format
-- [ ] Add configuration file support
-- [ ] Implement parallel processing
-- [ ] Add progress bar display
-- [ ] Support incremental image synchronization
+2. Create a feature branch
+3. Make your changes
+4. Submit a pull request
 
 ## 📜 License
 
 This project is licensed under the MIT License - see the [LICENSE](LICENSE) file for details.
-
-## 🙏 Acknowledgments
-
-Thanks to all developers and projects contributing to the container ecosystem.
 
 ---
 
