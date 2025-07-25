@@ -1,67 +1,44 @@
-# Harpoon 🎯
+# Harpoon (hpn) 🎯
 
 [![License](https://img.shields.io/badge/license-MIT-blue.svg)](LICENSE)
-[![Go Version](https://img.shields.io/badge/go-1.19+-blue.svg)](https://golang.org)
-[![Version](https://img.shields.io/badge/version-v1.0-green.svg)](releases)
+[![Go Version](https://img.shields.io/badge/go-1.21+-blue.svg)](https://golang.org)
+[![Version](https://img.shields.io/badge/version-v1.1-green.svg)](https://github.com/your-org/harpoon/releases)
+[![Build Status](https://github.com/your-org/harpoon/workflows/Enhanced%20Testing/badge.svg)](https://github.com/your-org/harpoon/actions)
 
-**Harpoon** is a powerful cloud-native container image management tool designed for Kubernetes environments and enterprise container workflows. It provides flexible image pulling, saving, loading, and pushing capabilities with multiple operation modes.
+**Harpoon** is a modern, efficient container image management CLI tool written in Go. It provides powerful operations for pulling, saving, loading, and pushing container images with support for multiple container runtimes and flexible operation modes.
 
-## 🌟 Features
+## ✨ Features
 
-- **Multi-Container Runtime Support**: Compatible with Docker, Podman, and Nerdctl
-- **Flexible Operation Modes**: Each operation supports multiple modes for different scenarios
-- **Cross-Platform**: Native Go binary for Linux, macOS, and Windows
-- **Configuration Management**: YAML config files with environment variable overrides
-- **Proxy Support**: Built-in HTTP/HTTPS proxy configuration
-- **Batch Operations**: Support for bulk image processing
-- **Private Registry Support**: Complete private image registry push functionality
+- **Multi-Runtime Support**: Docker, Podman, Nerdctl with automatic detection
+- **Smart Runtime Fallback**: Automatic fallback when preferred runtime unavailable
+- **Flexible Operation Modes**: Multiple modes for different deployment scenarios
+- **Cross-Platform**: Linux, macOS, Windows support (AMD64, ARM64)
+- **Configuration Management**: YAML-based config with environment variables
+- **Batch Operations**: Efficient bulk image processing
+- **Enterprise Ready**: Proxy support, authentication, private registries
 
-## 🚀 Installation
+## 🚀 Quick Start
 
-### Quick Install (Recommended)
-
-```bash
-# Install latest version
-curl -fsSL https://raw.githubusercontent.com/ghostwritten/harpoon/main/install.sh | bash
-
-# Or with wget
-wget -qO- https://raw.githubusercontent.com/ghostwritten/harpoon/main/install.sh | bash
-```
-
-### Download Binary
-
-Choose your platform:
-
-| Platform | Architecture | Download Command |
-|----------|-------------|------------------|
-| Linux | AMD64 | `wget https://github.com/ghostwritten/harpoon/releases/latest/download/hpn-linux-amd64` |
-| Linux | ARM64 | `wget https://github.com/ghostwritten/harpoon/releases/latest/download/hpn-linux-arm64` |
-| macOS | Intel | `wget https://github.com/ghostwritten/harpoon/releases/latest/download/hpn-darwin-amd64` |
-| macOS | Apple Silicon | `wget https://github.com/ghostwritten/harpoon/releases/latest/download/hpn-darwin-arm64` |
-| Windows | AMD64 | Download `hpn-windows-amd64.exe` from releases page |
-
-After download:
-```bash
-chmod +x hpn-*
-sudo mv hpn-* /usr/local/bin/hpn
-```
-
-### Build from Source
+### Installation
 
 ```bash
-git clone https://github.com/ghostwritten/harpoon.git
-cd harpoon
-go build -o hpn ./cmd/hpn
+# Download and install (Linux/macOS)
+curl -L https://github.com/your-org/harpoon/releases/latest/download/hpn-linux-amd64 -o hpn
+chmod +x hpn
+sudo mv hpn /usr/local/bin/
+
+# Verify installation
+hpn --version
 ```
 
-## 🔧 Quick Start
+For detailed installation instructions, see the [Installation Guide](docs/installation.md).
 
 ### Basic Usage
 
 ```bash
 # Create image list
 echo "nginx:latest" > images.txt
-echo "redis:alpine" >> images.txt
+echo "alpine:3.18" >> images.txt
 
 # Pull images
 hpn -a pull -f images.txt
@@ -72,158 +49,123 @@ hpn -a save -f images.txt --save-mode 2
 # Load from tar files
 hpn -a load --load-mode 2
 
-# Push to private registry
-hpn -a push -f images.txt -r registry.example.com -p myproject --push-mode 2
+# Push to registry with smart project selection
+hpn -a push -f images.txt -r harbor.company.com --push-mode 2
 ```
 
-## 📖 Command Reference
+## 📖 Documentation
 
-### Syntax
+### Essential Guides
+- [📚 Quick Start Guide](docs/quickstart.md) - Get up and running in minutes
+- [⚙️ Installation Guide](docs/installation.md) - Detailed installation instructions
+- [📖 User Guide](docs/user-guide.md) - Complete usage guide
+- [🔧 Configuration Guide](docs/configuration.md) - Configuration options and examples
+
+### Advanced Topics
+- [🏗️ Architecture](docs/architecture.md) - System architecture and design
+- [🐳 Runtime Support](docs/runtime-support.md) - Container runtime compatibility
+- [🔒 Security Guide](docs/security.md) - Security best practices
+- [🛠️ Development Guide](docs/development.md) - Contributing and development
+
+### Reference & Support
+- [📋 API Reference](docs/api-reference.md) - Command-line interface reference
+- [💡 Examples](docs/examples.md) - Real-world usage examples
+- [❓ FAQ](docs/faq.md) - Frequently asked questions
+- [🔍 Troubleshooting](docs/troubleshooting.md) - Common issues and solutions
+
+### Release Information
+- [📝 Changelog](docs/changelog.md) - Version history and changes
+- [🚀 Release Notes](docs/release-notes.md) - Latest release information
+- [⬆️ Upgrade Guide](docs/upgrade-guide.md) - Version upgrade instructions
+
+## 🎯 Key Features
+
+### Smart Runtime Management
 ```bash
-hpn -a <action> -f <image_list> [options]
+# Auto-detect available runtime
+hpn -a pull -f images.txt
+
+# Specify runtime explicitly
+hpn --runtime podman -a pull -f images.txt
+
+# Auto-fallback for CI/CD
+hpn --auto-fallback -a pull -f images.txt
 ```
 
-### Actions
-- `pull` - Pull images from external registry
-- `save` - Save images into tar files
-- `load` - Load images from tar files
-- `push` - Push images to private registry
+### Flexible Push Modes
+```bash
+# Simple push: registry/image:tag
+hpn -a push -f images.txt -r harbor.com --push-mode 1
 
-### Options
-- `-a, --action` - Action (required)
-- `-f, --file` - Image list file (required for pull/save/push)
-- `-r, --registry` - Target registry (default from config)
-- `-p, --project` - Target project namespace (default from config)
-- `-c, --config` - Config file path
+# Smart project selection: registry/project/image:tag
+hpn -a push -f images.txt -r harbor.com -p production --push-mode 2
+```
 
-### Operation Modes
+### Configuration
+```bash
+# Create config directory
+mkdir -p ~/.hpn
 
-| Mode | Save | Load | Push |
-|------|------|------|------|
-| 1 | Current directory | Current directory | `registry/image:tag` |
-| 2 | `./images/` | `./images/` | `registry/project/image:tag` |
-| 3 | `./images/<project>/` | Recursive `./images/*/` | Preserve original path |
-
-## ⚙️ Configuration
-
-### Config File
-
-Create `~/.hpn/config.yaml`:
-
-```yaml
-registry: registry.k8s.local
-project: library
-proxy:
-  http: http://proxy.company.com:8080
-  https: http://proxy.company.com:8080
-  enabled: true
+# Basic configuration
+cat > ~/.hpn/config.yaml << EOF
+registry: harbor.company.com
+project: production
 runtime:
   preferred: docker
-  timeout: 5m
-logging:
-  level: info
-  format: text
-parallel:
-  max_workers: 5
+  auto_fallback: true
 modes:
-  save_mode: 2
-  load_mode: 2
   push_mode: 2
+EOF
 ```
 
-### Environment Variables
+## 🔨 Development
 
+### Building from Source
 ```bash
-export HPN_REGISTRY=registry.example.com
-export HPN_PROJECT=myproject
-export HPN_PROXY_HTTP=http://proxy.example.com:8080
+# Clone repository
+git clone https://github.com/your-org/harpoon.git
+cd harpoon
+
+# Build for current platform
+make build
+
+# Build for all platforms
+make build-all
+
+# Run development tests
+make dev-test
 ```
 
-## 🔨 Building
+### Contributing
+We welcome contributions! Please see our [Development Guide](docs/development.md) for:
+- Setting up development environment
+- Building and testing
+- Submitting pull requests
+- Code style guidelines
 
-### Cross-Platform Build
+## 💼 Use Cases
 
-```bash
-# Current platform
-go build -o hpn ./cmd/hpn
+- **Kubernetes Deployments**: Pre-pull and manage cluster images
+- **Air-Gapped Environments**: Offline image distribution
+- **Registry Migration**: Move images between registries
+- **CI/CD Pipelines**: Automated image operations
+- **Development Workflows**: Local image management
 
-# Specific platforms
-GOOS=linux GOARCH=amd64 go build -o hpn-linux-amd64 ./cmd/hpn
-GOOS=linux GOARCH=arm64 go build -o hpn-linux-arm64 ./cmd/hpn
-GOOS=darwin GOARCH=amd64 go build -o hpn-darwin-amd64 ./cmd/hpn
-GOOS=darwin GOARCH=arm64 go build -o hpn-darwin-arm64 ./cmd/hpn
-GOOS=windows GOARCH=amd64 go build -o hpn-windows-amd64.exe ./cmd/hpn
+## 🆕 What's New in v1.1
 
-# Using Makefile
-make build-all    # All platforms
-make build-linux  # Linux AMD64
+- **Enhanced Runtime Support**: New `--runtime` parameter and smart detection
+- **Simplified Push Modes**: Removed redundant mode, improved smart project selection
+- **Better User Experience**: Concise error messages, parameter validation
+- **Auto-fallback**: Automatic runtime fallback for CI environments
 
-# Using build script
-./build.sh all    # All platforms
-./build.sh linux  # Linux AMD64
-```
+See the [Changelog](docs/changelog.md) for complete details.
 
-### Supported Platforms
+## 🤝 Community & Support
 
-| OS | Architecture | Status |
-|---|---|---|
-| Linux | AMD64 | ✅ Tested |
-| Linux | ARM64 | ✅ Tested |
-| macOS | AMD64 (Intel) | ✅ Tested |
-| macOS | ARM64 (Apple Silicon) | ✅ Tested |
-| Windows | AMD64 | ✅ Tested |
-
-## 📋 Use Cases
-
-### Kubernetes Cluster Setup
-```bash
-# Pull K8s system images
-hpn -a pull -f k8s-system-images.txt
-hpn -a save -f k8s-system-images.txt --save-mode 2
-```
-
-### Air-Gapped Deployment
-```bash
-# Prepare images for offline environment
-hpn -a pull -f production-images.txt
-hpn -a save -f production-images.txt --save-mode 2
-tar -czf offline-images.tar.gz images/
-```
-
-### Private Registry Migration
-```bash
-# Migrate images to private registry
-hpn -a pull -f public-images.txt
-hpn -a push -f public-images.txt -r harbor.company.com -p production --push-mode 2
-```
-
-## 🐛 Troubleshooting
-
-### Common Issues
-
-1. **Binary won't execute**
-   ```bash
-   chmod +x hpn
-   ```
-
-2. **Container runtime not found**
-   ```bash
-   # Install Docker, Podman, or Nerdctl
-   curl -fsSL https://get.docker.com | sh
-   ```
-
-3. **Network issues**
-   ```bash
-   # Configure proxy
-   export HPN_PROXY_HTTP=http://proxy.example.com:8080
-   ```
-
-## 🤝 Contributing
-
-1. Fork the repository
-2. Create a feature branch
-3. Make your changes
-4. Submit a pull request
+- **Documentation**: [docs/](docs/) - Comprehensive guides and references
+- **Issues**: [GitHub Issues](https://github.com/your-org/harpoon/issues) - Bug reports and feature requests
+- **Discussions**: [GitHub Discussions](https://github.com/your-org/harpoon/discussions) - Community discussions
+- **Contributing**: [Development Guide](docs/development.md) - How to contribute
 
 ## 📜 License
 
@@ -231,4 +173,4 @@ This project is licensed under the MIT License - see the [LICENSE](LICENSE) file
 
 ---
 
-**Harpoon** - Precision targeting for container image management challenges 🎯
+**Harpoon** - Modern container image management with precision and efficiency 🎯

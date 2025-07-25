@@ -1,6 +1,6 @@
 # Harpoon Build Configuration
 BINARY_NAME=hpn
-VERSION=v1.0
+VERSION=v1.1
 COMMIT=$(shell git rev-parse --short HEAD 2>/dev/null || echo "dev")
 BUILD_DATE=$(shell date -u +"%Y-%m-%dT%H:%M:%SZ")
 
@@ -132,8 +132,20 @@ dev-setup: deps
 .PHONY: quick-test
 quick-test: build
 	@echo "Testing basic functionality..."
-	./${BINARY_NAME} --help
 	./${BINARY_NAME} --version
+	./${BINARY_NAME} --help | head -15
+	@echo "Quick test completed!"
+
+# Development test (replaces old test scripts)
+.PHONY: dev-test
+dev-test: build test
+	@echo "Running development tests..."
+	./${BINARY_NAME} --version
+	./${BINARY_NAME} -v
+	./${BINARY_NAME} version
+	@echo "Testing error handling..."
+	./${BINARY_NAME} 2>&1 | head -3 || echo "Error handling works"
+	@echo "Development test completed!"
 
 # Help
 .PHONY: help

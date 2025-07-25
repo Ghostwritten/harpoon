@@ -2,54 +2,73 @@ package main
 
 import (
 	"bufio"
+	"context"
 	"fmt"
 	"os"
-	"os/exec"
 	"path/filepath"
+	"runtime"
 	"strings"
+	"time"
 
 	"github.com/spf13/cobra"
 	"github.com/harpoon/hpn/internal/config"
+	containerruntime "github.com/harpoon/hpn/internal/runtime"
 	"github.com/harpoon/hpn/pkg/types"
 )
 
 var (
-	version = "v1.0"
+	version = "v1.1"
 	commit  = "dev"
 	date    = "unknown"
 )
 
 // Command line flags matching images.sh
 var (
-	action     string
-	imageFile  string
-	registry   string
-	project    string
-	pushMode   int
-	loadMode   int
-	saveMode   int
-	configFile string
+	action       string
+	imageFile    string
+	registry     string
+	project      string
+	pushMode     int
+	loadMode     int
+	saveMode     int
+	configFile   string
+	runtimeName  string
+	autoFallback bool
 )
 
 // Global configuration
 var (
-	cfg        *types.Config
-	configMgr  *config.Manager
+	cfg             *types.Config
+	configMgr       *config.Manager
+	runtimeDetector *containerruntime.Detector
 )
 
 var rootCmd = &cobra.Command{
 	Use:   "hpn",
 	Short: "Manage container images (pull/save/load/push) with flexible modes",
-	Long: `Script Name : hpn
-Description : Manage container images (pull/save/load/push) with flexible modes
-Author      : zong xun
-Version     : v1.0`,
-	RunE: runCommand,
+	Long:  `Manage container images (pull/save/load/push) with flexible modes`,
+	Version:       getVersionString(),
+	RunE:          runCommand,
+	SilenceUsage:  true, // Don't show usage on errors
+	SilenceErrors: true, // Don't let Cobra print errors automatically
+}
+
+// Version command
+var versionCmd = &cobra.Command{
+	Use:   "version",
+	Short: "Show version information",
+	Long:  "Display detailed version information including build details",
+	Run: func(cmd *cobra.Command, args []string) {
+		fmt.Println(getDetailedVersionString())
+	},
 }
 
 func init() {
 	// Initialize configuration manager
 	configMgr = config.NewManager()
+	
+	// Initialize runtime detector
+	runtimeDetector = containerruntime.NewDetector()
 	
 	// Required flags matching images.sh interface
 	rootCmd.Flags().StringVarP(&action, "action", "a", "", "Action (required): pull | save | load | push")
@@ -65,63 +84,63 @@ func init() {
 	// Configuration flag
 	rootCmd.Flags().StringVarP(&configFile, "config", "c", "", "Config file (default is $HOME/.hpn/config.yaml)")
 	
-	// Mark action as required
-	rootCmd.MarkFlagRequired("action")
+	// Runtime flags
+	rootCmd.Flags().StringVar(&runtimeName, "runtime", "", "Container runtime to use (docker|podman|nerdctl)")
+	rootCmd.Flags().BoolVar(&autoFallback, "auto-fallback", false, "Automatically fallback to available runtime")
+	
+	// Version flags (in addition to --version)
+	rootCmd.Flags().BoolP("version", "v", false, "Show version information")
+	rootCmd.Flags().BoolP("Version", "V", false, "Show version information")
+	
+	// Add version subcommand
+	rootCmd.AddCommand(versionCmd)
 	
 	// Custom usage template matching images.sh
 	rootCmd.SetUsageTemplate(usageTemplate)
 }
 
-const usageTemplate = `Usage: {{.UseLine}} -a <action> -f <image_list> [-r <registry>] [-p <project>] [-c <config>] [--push-mode <1|2|3>] [--load-mode <1|2|3>] [--save-mode <1|2|3>]
+const usageTemplate = `Usage: {{.UseLine}} -a <action> -f <file> [options]
 
 Actions:
-  pull            Pull images from external registry
-  save            Save images into tar files
-  load            Load images from tar files
-  push            Push images to private registry
+  pull    Pull images from registry
+  save    Save images to tar files  
+  load    Load images from tar files
+  push    Push images to registry
 
 Options:
-  -a, --action    Action (required): pull | save | load | push
-  -f, --file      Image list file (required for pull/save/push)
-  -r, --registry  Target registry (default from config or registry.k8s.local)
-  -p, --project   Target project namespace (default from config or library)
-  -c, --config    Config file (default: $HOME/.hpn/config.yaml)
+  -a, --action     Action: pull | save | load | push
+  -f, --file       Image list file
+  -r, --registry   Target registry
+  -p, --project    Target project namespace
+  -c, --config     Config file path
+      --runtime    Container runtime: docker | podman | nerdctl
+      --auto-fallback  Auto fallback to available runtime
+  -v, --version    Show version
+  -h, --help       Show help
 
 Modes:
-  --push-mode     Push mode (default from config or 1):
-                    1 = Push as registry/image:tag
-                    2 = Push as registry/project/image:tag
-                    3 = Push preserving original project path
-
-  --load-mode     Load mode (default from config or 1):
-                    1 = Load all *.tar files from current directory
-                    2 = Load all *.tar files from ./images directory
-                    3 = Recursively load *.tar from subdirectories under ./images/*/
-
-  --save-mode     Save mode (default from config or 1):
-                    1 = Save tar files to current directory
-                    2 = Save tar files to ./images/
-                    3 = Save tar files to ./images/<project>/
-
-Configuration:
-  Config file locations (in order of precedence):
-    1. File specified by --config flag
-    2. $HOME/.hpn/config.yaml
-    3. /etc/hpn/config.yaml
-    4. ./config.yaml
-
-  Environment variables (override config file):
-    HPN_REGISTRY, HPN_PROJECT, HPN_PROXY_HTTP, HPN_PROXY_HTTPS
-    http_proxy, https_proxy (standard proxy variables)
+  --push-mode      1=registry/image:tag  2=registry/project/image:tag
+  --save-mode      1=current dir  2=./images/  3=./images/<project>/
+  --load-mode      1=current dir  2=./images/  3=recursive ./images/*/
 
 Examples:
   hpn -a pull -f images.txt
   hpn -a save -f images.txt --save-mode 2
-  hpn -a push -f images.txt -r harbor.example.com -p myproject --push-mode 2
-  hpn --config /path/to/config.yaml -a pull -f images.txt
+  hpn -a push -f images.txt -r harbor.com -p prod --push-mode 2
+  hpn --runtime podman -a pull -f images.txt
 `
 
 func runCommand(cmd *cobra.Command, args []string) error {
+	// Check for version flags first
+	if versionFlag, _ := cmd.Flags().GetBool("version"); versionFlag {
+		printVersionInfo()
+		return nil
+	}
+	if versionFlag, _ := cmd.Flags().GetBool("Version"); versionFlag {
+		printVersionInfo()
+		return nil
+	}
+	
 	// Load configuration
 	var err error
 	cfg, err = configMgr.Load(configFile)
@@ -146,18 +165,23 @@ func runCommand(cmd *cobra.Command, args []string) error {
 		saveMode = int(cfg.Modes.SaveMode)
 	}
 	
-	// Validate action
-	validActions := []string{"pull", "save", "load", "push"}
-	actionValid := false
-	for _, validAction := range validActions {
-		if action == validAction {
-			actionValid = true
-			break
+	// Validate action (skip if empty, as it might be a version-only call)
+	if action != "" {
+		validActions := []string{"pull", "save", "load", "push"}
+		actionValid := false
+		for _, validAction := range validActions {
+			if action == validAction {
+				actionValid = true
+				break
+			}
 		}
-	}
-	
-	if !actionValid {
-		return fmt.Errorf("invalid action '%s'. Valid actions: %s", action, strings.Join(validActions, ", "))
+		
+		if !actionValid {
+			return fmt.Errorf("invalid action '%s'. Valid actions: %s", action, strings.Join(validActions, ", "))
+		}
+	} else {
+		// If no action provided and no version flags, show error
+		return fmt.Errorf("missing required -a <action> parameter. Use -h for help or -v for version")
 	}
 	
 	// Validate file parameter for actions that require it
@@ -165,15 +189,68 @@ func runCommand(cmd *cobra.Command, args []string) error {
 		return fmt.Errorf("missing required -f <image_list> parameter for action '%s'", action)
 	}
 	
-	// Validate mode ranges
-	if pushMode < 1 || pushMode > 3 {
-		return fmt.Errorf("invalid push-mode '%d'. Valid values: 1, 2, 3", pushMode)
+	// Validate mode compatibility with action
+	switch action {
+	case "push":
+		// Check for incompatible modes
+		if cmd.Flags().Changed("save-mode") {
+			return fmt.Errorf("--save-mode cannot be used with push action")
+		}
+		if cmd.Flags().Changed("load-mode") {
+			return fmt.Errorf("--load-mode cannot be used with push action")
+		}
+		// Validate push mode range
+		if pushMode < 1 || pushMode > 2 {
+			return fmt.Errorf("invalid push-mode '%d'. Valid values: 1, 2", pushMode)
+		}
+	case "save":
+		// Check for incompatible modes
+		if cmd.Flags().Changed("push-mode") {
+			return fmt.Errorf("--push-mode cannot be used with save action")
+		}
+		if cmd.Flags().Changed("load-mode") {
+			return fmt.Errorf("--load-mode cannot be used with save action")
+		}
+		// Validate save mode range
+		if saveMode < 1 || saveMode > 3 {
+			return fmt.Errorf("invalid save-mode '%d'. Valid values: 1, 2, 3", saveMode)
+		}
+	case "load":
+		// Check for incompatible modes
+		if cmd.Flags().Changed("push-mode") {
+			return fmt.Errorf("--push-mode cannot be used with load action")
+		}
+		if cmd.Flags().Changed("save-mode") {
+			return fmt.Errorf("--save-mode cannot be used with load action")
+		}
+		// Validate load mode range
+		if loadMode < 1 || loadMode > 3 {
+			return fmt.Errorf("invalid load-mode '%d'. Valid values: 1, 2, 3", loadMode)
+		}
+	case "pull":
+		// Pull doesn't use any modes, check for incompatible modes
+		if cmd.Flags().Changed("push-mode") {
+			return fmt.Errorf("--push-mode cannot be used with pull action")
+		}
+		if cmd.Flags().Changed("save-mode") {
+			return fmt.Errorf("--save-mode cannot be used with pull action")
+		}
+		if cmd.Flags().Changed("load-mode") {
+			return fmt.Errorf("--load-mode cannot be used with pull action")
+		}
 	}
-	if loadMode < 1 || loadMode > 3 {
-		return fmt.Errorf("invalid load-mode '%d'. Valid values: 1, 2, 3", loadMode)
-	}
-	if saveMode < 1 || saveMode > 3 {
-		return fmt.Errorf("invalid save-mode '%d'. Valid values: 1, 2, 3", saveMode)
+	
+	// Smart push mode adjustment: if user specifies project but uses default push mode 1,
+	// automatically switch to push mode 2 to include the project
+	if action == "push" && pushMode == 1 && project != "" {
+		// Check if project was explicitly specified by user (not just from config default)
+		projectExplicitlySet := cmd.Flags().Changed("project") || 
+			(cfg != nil && cfg.Project != project) // project differs from config default
+		
+		if projectExplicitlySet {
+			pushMode = 2
+			fmt.Printf("Auto-adjusted to push mode 2 for project '%s'\n", project)
+		}
 	}
 	
 	// Execute the action
@@ -185,7 +262,7 @@ func runCommand(cmd *cobra.Command, args []string) error {
 	case "load":
 		return executeLoad()
 	case "push":
-		return executePush()
+		return executePush(cmd)
 	default:
 		return fmt.Errorf("unknown action: %s", action)
 	}
@@ -194,13 +271,13 @@ func runCommand(cmd *cobra.Command, args []string) error {
 func executePull() error {
 	fmt.Printf("Executing pull action with file: %s\n", imageFile)
 	
-	// Detect container runtime
-	runtime, err := detectContainerRuntime()
+	// Select container runtime
+	selectedRuntime, err := selectContainerRuntime()
 	if err != nil {
-		return fmt.Errorf("container runtime detection failed: %v", err)
+		return fmt.Errorf("container runtime selection failed: %v", err)
 	}
 	
-	fmt.Printf("Using container runtime: %s\n", runtime)
+	fmt.Printf("Using container runtime: %s\n", selectedRuntime.Name())
 	
 	// Read image list from file
 	images, err := readImageList(imageFile)
@@ -217,19 +294,23 @@ func executePull() error {
 	for i, image := range images {
 		fmt.Printf("[%d/%d] Pulling %s...\n", i+1, len(images), image)
 		
-		if err := pullImage(runtime, image); err != nil {
+		ctx, cancel := context.WithTimeout(context.Background(), 5*time.Minute)
+		pullOptions := containerruntime.PullOptions{
+			Timeout: 5 * time.Minute,
+		}
+		
+		if err := selectedRuntime.Pull(ctx, image, pullOptions); err != nil {
 			fmt.Printf("❌ Failed to pull %s: %v\n", image, err)
 			failedImages = append(failedImages, image)
 		} else {
 			fmt.Printf("✅ Successfully pulled %s\n", image)
 			successCount++
 		}
+		cancel()
 	}
 	
 	// Print summary
-	fmt.Printf("\n📊 Pull Summary:\n")
-	fmt.Printf("  ✅ Successful: %d\n", successCount)
-	fmt.Printf("  ❌ Failed: %d\n", len(failedImages))
+	fmt.Printf("\nSummary: %d successful, %d failed\n", successCount, len(failedImages))
 	
 	if len(failedImages) > 0 {
 		fmt.Printf("\nFailed images:\n")
@@ -245,13 +326,13 @@ func executePull() error {
 func executeSave() error {
 	fmt.Printf("Executing save action with file: %s, mode: %d\n", imageFile, saveMode)
 	
-	// Detect container runtime
-	runtime, err := detectContainerRuntime()
+	// Select container runtime
+	selectedRuntime, err := selectContainerRuntime()
 	if err != nil {
-		return fmt.Errorf("container runtime detection failed: %v", err)
+		return fmt.Errorf("container runtime selection failed: %v", err)
 	}
 	
-	fmt.Printf("Using container runtime: %s\n", runtime)
+	fmt.Printf("Using container runtime: %s\n", selectedRuntime.Name())
 	
 	// Read image list from file
 	images, err := readImageList(imageFile)
@@ -288,7 +369,7 @@ func executeSave() error {
 	for i, image := range images {
 		fmt.Printf("[%d/%d] Saving %s...\n", i+1, len(images), image)
 		
-		if err := saveImage(runtime, image, saveDir, saveMode); err != nil {
+		if err := saveImage(selectedRuntime, image, saveDir, saveMode); err != nil {
 			fmt.Printf("❌ Failed to save %s: %v\n", image, err)
 			failedImages = append(failedImages, image)
 		} else {
@@ -298,9 +379,7 @@ func executeSave() error {
 	}
 	
 	// Print summary
-	fmt.Printf("\n📊 Save Summary:\n")
-	fmt.Printf("  ✅ Successful: %d\n", successCount)
-	fmt.Printf("  ❌ Failed: %d\n", len(failedImages))
+	fmt.Printf("\nSummary: %d successful, %d failed\n", successCount, len(failedImages))
 	
 	if len(failedImages) > 0 {
 		fmt.Printf("\nFailed images:\n")
@@ -316,13 +395,13 @@ func executeSave() error {
 func executeLoad() error {
 	fmt.Printf("Executing load action with mode: %d\n", loadMode)
 	
-	// Detect container runtime
-	runtime, err := detectContainerRuntime()
+	// Select container runtime
+	selectedRuntime, err := selectContainerRuntime()
 	if err != nil {
-		return fmt.Errorf("container runtime detection failed: %v", err)
+		return fmt.Errorf("container runtime selection failed: %v", err)
 	}
 	
-	fmt.Printf("Using container runtime: %s\n", runtime)
+	fmt.Printf("Using container runtime: %s\n", selectedRuntime.Name())
 	
 	// Determine load directory based on mode
 	var loadDir string
@@ -364,7 +443,7 @@ func executeLoad() error {
 	for i, tarFile := range tarFiles {
 		fmt.Printf("[%d/%d] Loading %s...\n", i+1, len(tarFiles), tarFile)
 		
-		if err := loadImage(runtime, tarFile); err != nil {
+		if err := loadImage(selectedRuntime, tarFile); err != nil {
 			fmt.Printf("❌ Failed to load %s: %v\n", tarFile, err)
 			failedFiles = append(failedFiles, tarFile)
 		} else {
@@ -374,9 +453,7 @@ func executeLoad() error {
 	}
 	
 	// Print summary
-	fmt.Printf("\n📊 Load Summary:\n")
-	fmt.Printf("  ✅ Successful: %d\n", successCount)
-	fmt.Printf("  ❌ Failed: %d\n", len(failedFiles))
+	fmt.Printf("\nSummary: %d successful, %d failed\n", successCount, len(failedFiles))
 	
 	if len(failedFiles) > 0 {
 		fmt.Printf("\nFailed files:\n")
@@ -389,17 +466,17 @@ func executeLoad() error {
 	return nil
 }
 
-func executePush() error {
+func executePush(cmd *cobra.Command) error {
 	fmt.Printf("Executing push action with file: %s, mode: %d, registry: %s, project: %s\n", 
 		imageFile, pushMode, registry, project)
 	
 	// Detect container runtime
-	runtime, err := detectContainerRuntime()
+	selectedRuntime, err := selectContainerRuntime()
 	if err != nil {
-		return fmt.Errorf("container runtime detection failed: %v", err)
+		return fmt.Errorf("container runtime selection failed: %v", err)
 	}
 	
-	fmt.Printf("Using container runtime: %s\n", runtime)
+	fmt.Printf("Using container runtime: %s\n", selectedRuntime.Name())
 	
 	// Read image list from file
 	images, err := readImageList(imageFile)
@@ -419,7 +496,26 @@ func executePush() error {
 	for i, image := range images {
 		fmt.Printf("[%d/%d] Pushing %s...\n", i+1, len(images), image)
 		
-		if err := pushImage(runtime, image, registry, project, pushMode); err != nil {
+		// Determine project name for this specific image based on push mode
+		var effectiveProject string
+		if pushMode == 2 {
+			// For mode 2, use smart project selection
+			if cmd.Flags().Changed("project") {
+				// User explicitly specified project via command line
+				effectiveProject = project
+			} else if cfg != nil && cfg.Project != "" && cfg.Project != "library" {
+				// Use config file project (if not default "library")
+				effectiveProject = cfg.Project
+			} else {
+				// Use original image project name
+				effectiveProject = extractProjectFromImage(image)
+			}
+		} else {
+			// For mode 1, use the project as-is (though it won't be used)
+			effectiveProject = project
+		}
+		
+		if err := pushImage(selectedRuntime, image, registry, effectiveProject, pushMode); err != nil {
 			fmt.Printf("❌ Failed to push %s: %v\n", image, err)
 			failedImages = append(failedImages, image)
 		} else {
@@ -429,9 +525,7 @@ func executePush() error {
 	}
 	
 	// Print summary
-	fmt.Printf("\n📊 Push Summary:\n")
-	fmt.Printf("  ✅ Successful: %d\n", successCount)
-	fmt.Printf("  ❌ Failed: %d\n", len(failedImages))
+	fmt.Printf("\nSummary: %d successful, %d failed\n", successCount, len(failedImages))
 	
 	if len(failedImages) > 0 {
 		fmt.Printf("\nFailed images:\n")
@@ -444,30 +538,66 @@ func executePush() error {
 	return nil
 }
 
-// detectContainerRuntime detects available container runtime
-func detectContainerRuntime() (string, error) {
-	// Check for Docker
-	if _, err := exec.LookPath("docker"); err == nil {
-		if err := exec.Command("docker", "version").Run(); err == nil {
-			return "docker", nil
+// selectContainerRuntime selects the appropriate container runtime
+func selectContainerRuntime() (containerruntime.ContainerRuntime, error) {
+	// If runtime is explicitly specified via flag
+	if runtimeName != "" {
+		selectedRuntime, err := runtimeDetector.GetByName(runtimeName)
+		if err != nil {
+			return nil, fmt.Errorf("specified runtime '%s' is not available: %v", runtimeName, err)
+		}
+		return selectedRuntime, nil
+	}
+	
+	// Check if runtime is specified in config
+	var configuredRuntime string
+	if cfg != nil && cfg.Runtime.Preferred != "" {
+		configuredRuntime = cfg.Runtime.Preferred
+	}
+	
+	// If configured runtime is specified, try to use it
+	if configuredRuntime != "" {
+		configuredRuntimeObj, err := runtimeDetector.GetByName(configuredRuntime)
+		if err == nil {
+			return configuredRuntimeObj, nil
+		}
+		
+		// Configured runtime is not available, check for alternatives
+		available := runtimeDetector.DetectAvailable()
+		if len(available) == 0 {
+			return nil, fmt.Errorf("no container runtime found. Please install docker, podman, or nerdctl")
+		}
+		
+		// Check if auto-fallback is enabled
+		if autoFallback || (cfg != nil && cfg.Runtime.AutoFallback) {
+			fmt.Printf("Runtime '%s' unavailable, using '%s'\n", configuredRuntime, available[0].Name())
+			return available[0], nil
+		}
+		
+		// Ask user for confirmation
+		fmt.Printf("Runtime '%s' is not available\n", configuredRuntime)
+		fmt.Printf("Found available runtime: %s\n", available[0].Name())
+		fmt.Printf("Use '%s' instead of '%s'? (y/N): ", available[0].Name(), configuredRuntime)
+		
+		var response string
+		fmt.Scanln(&response)
+		response = strings.ToLower(strings.TrimSpace(response))
+		
+		if response == "y" || response == "yes" {
+			fmt.Printf("Using '%s' runtime\n", available[0].Name())
+			return available[0], nil
+		} else {
+			return nil, fmt.Errorf("user declined runtime fallback. Please install '%s' or update config", configuredRuntime)
 		}
 	}
 	
-	// Check for Podman
-	if _, err := exec.LookPath("podman"); err == nil {
-		if err := exec.Command("podman", "version").Run(); err == nil {
-			return "podman", nil
-		}
+	// No specific runtime configured, use the preferred one
+	preferred := runtimeDetector.GetPreferred()
+	if preferred == nil {
+		return nil, fmt.Errorf("no container runtime found. Please install docker, podman, or nerdctl")
 	}
 	
-	// Check for Nerdctl
-	if _, err := exec.LookPath("nerdctl"); err == nil {
-		if err := exec.Command("nerdctl", "version").Run(); err == nil {
-			return "nerdctl", nil
-		}
-	}
-	
-	return "", fmt.Errorf("no container runtime found. Please install docker, podman, or nerdctl")
+	return preferred, nil
 }
 
 // readImageList reads image list from file
@@ -500,42 +630,10 @@ func readImageList(filename string) ([]string, error) {
 	return images, nil
 }
 
-// pullImage pulls a single image using the specified runtime
-func pullImage(runtime, image string) error {
-	var cmd *exec.Cmd
-	
-	switch runtime {
-	case "docker":
-		cmd = exec.Command("docker", "pull", image)
-	case "podman":
-		cmd = exec.Command("podman", "pull", image)
-	case "nerdctl":
-		// For nerdctl, add insecure registry flag for private registries
-		if strings.Contains(image, "registry.k8s.local") || 
-		   strings.Contains(image, "localhost") ||
-		   !strings.Contains(image, ".") {
-			cmd = exec.Command("nerdctl", "--insecure-registry", "pull", image)
-		} else {
-			cmd = exec.Command("nerdctl", "pull", image)
-		}
-	default:
-		return fmt.Errorf("unsupported runtime: %s", runtime)
-	}
-	
-	// Set up environment for proxy if needed
-	cmd.Env = os.Environ()
-	
-	// Run the command
-	output, err := cmd.CombinedOutput()
-	if err != nil {
-		return fmt.Errorf("command failed: %v, output: %s", err, string(output))
-	}
-	
-	return nil
-}
+
 
 // saveImage saves a single image to tar file
-func saveImage(runtime, image, baseDir string, mode int) error {
+func saveImage(containerRuntime containerruntime.ContainerRuntime, image, baseDir string, mode int) error {
 	// Parse image name to generate tar filename
 	tarFilename := generateTarFilename(image)
 	
@@ -555,24 +653,12 @@ func saveImage(runtime, image, baseDir string, mode int) error {
 		tarPath = fmt.Sprintf("%s/%s", fullDir, tarFilename)
 	}
 	
-	// Execute save command
-	var cmd *exec.Cmd
+	// Execute save command using runtime interface
+	ctx, cancel := context.WithTimeout(context.Background(), 10*time.Minute)
+	defer cancel()
 	
-	switch runtime {
-	case "docker":
-		cmd = exec.Command("docker", "save", "-o", tarPath, image)
-	case "podman":
-		cmd = exec.Command("podman", "save", "-o", tarPath, image)
-	case "nerdctl":
-		cmd = exec.Command("nerdctl", "save", "-o", tarPath, image)
-	default:
-		return fmt.Errorf("unsupported runtime: %s", runtime)
-	}
-	
-	// Run the command
-	output, err := cmd.CombinedOutput()
-	if err != nil {
-		return fmt.Errorf("command failed: %v, output: %s", err, string(output))
+	if err := containerRuntime.Save(ctx, image, tarPath); err != nil {
+		return fmt.Errorf("failed to save image: %v", err)
 	}
 	
 	// Check if file was created successfully
@@ -580,7 +666,7 @@ func saveImage(runtime, image, baseDir string, mode int) error {
 		return fmt.Errorf("tar file was not created: %v", err)
 	}
 	
-	fmt.Printf("  💾 Saved to: %s\n", tarPath)
+	fmt.Printf("  Saved: %s\n", tarPath)
 	return nil
 }
 
@@ -641,31 +727,19 @@ func findTarFiles(dir string, recursive bool) ([]string, error) {
 }
 
 // loadImage loads a single tar file using the specified runtime
-func loadImage(runtime, tarFile string) error {
-	var cmd *exec.Cmd
+func loadImage(containerRuntime containerruntime.ContainerRuntime, tarFile string) error {
+	ctx, cancel := context.WithTimeout(context.Background(), 10*time.Minute)
+	defer cancel()
 	
-	switch runtime {
-	case "docker":
-		cmd = exec.Command("docker", "load", "-i", tarFile)
-	case "podman":
-		cmd = exec.Command("podman", "load", "-i", tarFile)
-	case "nerdctl":
-		cmd = exec.Command("nerdctl", "load", "-i", tarFile)
-	default:
-		return fmt.Errorf("unsupported runtime: %s", runtime)
-	}
-	
-	// Run the command
-	output, err := cmd.CombinedOutput()
-	if err != nil {
-		return fmt.Errorf("command failed: %v, output: %s", err, string(output))
+	if err := containerRuntime.Load(ctx, tarFile); err != nil {
+		return fmt.Errorf("failed to load image: %v", err)
 	}
 	
 	return nil
 }
 
 // pushImage pushes a single image to registry with the specified mode
-func pushImage(runtime, image, targetRegistry, targetProject string, mode int) error {
+func pushImage(containerRuntime containerruntime.ContainerRuntime, image, targetRegistry, targetProject string, mode int) error {
 	var targetImage string
 	
 	// Parse original image name and tag
@@ -673,54 +747,34 @@ func pushImage(runtime, image, targetRegistry, targetProject string, mode int) e
 	
 	switch mode {
 	case 1:
-		// Mode 1: registry/image:tag
+		// Mode 1: registry/image:tag (不包含项目名称)
 		targetImage = fmt.Sprintf("%s/%s:%s", targetRegistry, imageName, imageTag)
 	case 2:
 		// Mode 2: registry/project/image:tag
 		targetImage = fmt.Sprintf("%s/%s/%s:%s", targetRegistry, targetProject, imageName, imageTag)
-	case 3:
-		// Mode 3: preserve original project path
-		originalProject := extractProjectFromImage(image)
-		targetImage = fmt.Sprintf("%s/%s/%s:%s", targetRegistry, originalProject, imageName, imageTag)
+		fmt.Printf("  Project: %s\n", targetProject)
 	}
 	
-	fmt.Printf("  🏷️  Tagging %s -> %s\n", image, targetImage)
+	fmt.Printf("  Tag: %s -> %s\n", image, targetImage)
 	
 	// Tag the image
-	var tagCmd *exec.Cmd
-	switch runtime {
-	case "docker":
-		tagCmd = exec.Command("docker", "tag", image, targetImage)
-	case "podman":
-		tagCmd = exec.Command("podman", "tag", image, targetImage)
-	case "nerdctl":
-		tagCmd = exec.Command("nerdctl", "tag", image, targetImage)
-	default:
-		return fmt.Errorf("unsupported runtime: %s", runtime)
-	}
+	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Minute)
+	defer cancel()
 	
-	if output, err := tagCmd.CombinedOutput(); err != nil {
-		return fmt.Errorf("tag command failed: %v, output: %s", err, string(output))
+	if err := containerRuntime.Tag(ctx, image, targetImage); err != nil {
+		return fmt.Errorf("failed to tag image: %v", err)
 	}
 	
 	// Push the image
-	var pushCmd *exec.Cmd
-	switch runtime {
-	case "docker":
-		pushCmd = exec.Command("docker", "push", targetImage)
-	case "podman":
-		pushCmd = exec.Command("podman", "push", targetImage)
-	case "nerdctl":
-		pushCmd = exec.Command("nerdctl", "push", targetImage)
-	default:
-		return fmt.Errorf("unsupported runtime: %s", runtime)
+	pushOptions := containerruntime.PushOptions{
+		Timeout: 10 * time.Minute,
 	}
 	
-	if output, err := pushCmd.CombinedOutput(); err != nil {
-		return fmt.Errorf("push command failed: %v, output: %s", err, string(output))
+	if err := containerRuntime.Push(ctx, targetImage, pushOptions); err != nil {
+		return fmt.Errorf("failed to push image: %v", err)
 	}
 	
-	fmt.Printf("  📤 Pushed to: %s\n", targetImage)
+	fmt.Printf("  Pushed: %s\n", targetImage)
 	return nil
 }
 
@@ -735,4 +789,26 @@ func parseImageNameAndTag(image string) (string, string) {
 	}
 	
 	return lastPart, "latest"
+}// getVer
+// getVersionString returns formatted version information for cobra
+func getVersionString() string {
+	return fmt.Sprintf("%s (commit: %s, built: %s)", version, commit, date)
+}
+
+// printVersionInfo prints detailed version information consistently
+func printVersionInfo() {
+	fmt.Printf("Harpoon (hpn) %s\n", version)
+	fmt.Printf("Commit: %s\n", commit)
+	fmt.Printf("Built: %s\n", date)
+	fmt.Printf("Go version: %s\n", runtime.Version())
+	fmt.Printf("Platform: %s/%s\n", runtime.GOOS, runtime.GOARCH)
+}
+
+// getDetailedVersionString returns detailed version information as string
+func getDetailedVersionString() string {
+	return fmt.Sprintf(`Harpoon (hpn) %s
+Commit: %s
+Built: %s
+Go version: %s
+Platform: %s/%s`, version, commit, date, runtime.Version(), runtime.GOOS, runtime.GOARCH)
 }

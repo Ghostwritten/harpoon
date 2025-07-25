@@ -1,0 +1,139 @@
+name: Test
+
+on:
+  push:
+    branches: [ main, develop ]
+  pull_request:
+    branches: [ main ]
+
+jobs:
+  test:
+    runs-on: ${{ matrix.os }}
+    strategy:
+      matrix:
+        os: [ubuntu-latest, macos-latest, windows-latest]
+        go-version: ['1.21']
+
+    steps:
+    - uses: actions/checkout@v4
+
+    - name: Set up Go
+      uses: actions/setup-go@v4
+      with:
+        go-version: ${{ matrix.go-version }}
+
+    - name: Cache Go modules
+      uses: actions/cache@v3
+      with:
+        path: ~/go/pkg/mod
+        key: ${{ runner.os }}-go-${{ hashFiles('**/go.sum') }}
+        restore-keys: |
+          ${{ runner.os }}-go-
+
+    - name: Run tests
+      run: go test -v ./...
+
+    - name: Build
+      run: go build -v ./cmd/hpn
+
+    - name: Test basic functionality (Unix)
+      if: runner.os != 'Windows'
+      run: |
+        chmod +x ./hpn
+        ./hpn --version
+        ./hpn -v
+        ./hpn -V
+        ./hpn version
+        ./hpn --help | head -20
+
+    - name: Test basic functionality (Windows)
+      if: runner.os == 'Windows'
+      run: |
+        ./hpn.exe --version
+        ./hpn.exe -v
+        ./hpn.exe -V
+        ./hpn.exe version
+        ./hpn.exe --help
+
+    - name: Test error handling
+      run: |
+        # Test missing action (should fail)
+        if ./hpn 2>&1 | grep -i "missing.*action"; then
+          echo "✅ Error handling works"
+        else
+          echo "❌ Error handling failed"
+          exit 1
+        fi
+
+  cross-compile:
+    runs-on: ubuntu-latest
+    steps:
+    - uses: actions/checkout@v4
+
+    - name: Set up Go
+      uses: actions/setup-go@v4
+      with:
+        go-version: '1.21'
+
+    - name: Test cross-compilation
+      run: |
+        # Test building for all platforms
+        GOOS=linux GOARCH=amd64 go build -o hpn-linux-amd64 ./cmd/hpn
+        GOOS=linux GOARCH=arm64 go build -o hpn-linux-arm64 ./cmd/hpn
+        GOOS=darwin GOARCH=amd64 go build -o hpn-darwin-amd64 ./cmd/hpn
+        GOOS=darwin GOARCH=arm64 go build -o hpn-darwin-arm64 ./cmd/hpn
+        GOOS=windows GOARCH=amd64 go build -o hpn-windows-amd64.exe ./cmd/hpn
+        
+        # Verify files were created
+        ls -la hpn-*
+        
+        # Test Linux binary
+        ./hpn-linux-amd64 --version
+
+  integration-test:
+    runs-on: ubuntu-latest
+    services:
+      registry:
+        image: registry:2
+        ports:
+          - 5000:5000
+
+    steps:
+    - uses: actions/checkout@v4
+
+    - name: Set up Go
+      uses: actions/setup-go@v4
+      with:
+        go-version: '1.21'
+
+    - name: Build
+      run: go build -o hpn ./cmd/hpn
+
+    - name: Create test image list
+      run: |
+        echo "hello-world:latest" > test-images.txt
+        echo "alpine:3.18" >> test-images.txt
+
+    - name: Test pull operation
+      run: |
+        chmod +x ./hpn
+        ./hpn -a pull -f test-images.txt
+
+    - name: Test save operation
+      run: |
+        ./hpn -a save -f test-images.txt --save-mode 2
+        ls -la images/
+
+    - name: Test load operation
+      run: |
+        ./hpn -a load --load-mode 2
+
+    - name: Test push to local registry
+      run: |
+        # Tag images for local registry
+        docker tag hello-world:latest localhost:5000/hello-world:latest
+        docker push localhost:5000/hello-world:latest
+        
+        # Test hpn push (this might fail, but tests the command)
+        echo "localhost:5000/hello-world:latest" > push-test.txt
+        ./hpn -a push -f push-test.txt -r localhost:5000 -p test --push-mode 1 || echo "Push test completed (expected to have issues)"

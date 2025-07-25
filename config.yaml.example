@@ -40,4 +40,4 @@ parallel:
 modes:
   save_mode: 1       # 1=current dir, 2=./images/, 3=./images/<project>/
   load_mode: 1       # 1=current dir, 2=./images/, 3=recursive ./images/*/
-  push_mode: 1       # 1=registry/image:tag, 2=registry/project/image:tag, 3=preserve path
+  push_mode: 1       # 1=registry/image:tag, 2=registry/project/image:tag (智能项目名称选择)

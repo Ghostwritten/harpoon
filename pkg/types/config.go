@@ -26,9 +26,10 @@ type ProxyConfig struct {
 
 // RuntimeConfig contains container runtime settings
 type RuntimeConfig struct {
-	Preferred string        `yaml:"preferred" json:"preferred" mapstructure:"preferred"`
-	Timeout   time.Duration `yaml:"timeout" json:"timeout" mapstructure:"timeout"`
-	Retry     RetryConfig   `yaml:"retry" json:"retry" mapstructure:"retry"`
+	Preferred    string        `yaml:"preferred" json:"preferred" mapstructure:"preferred"`
+	Timeout      time.Duration `yaml:"timeout" json:"timeout" mapstructure:"timeout"`
+	Retry        RetryConfig   `yaml:"retry" json:"retry" mapstructure:"retry"`
+	AutoFallback bool          `yaml:"auto_fallback" json:"auto_fallback" mapstructure:"auto_fallback"`
 }
 
 // LoggingConfig contains logging settings
@@ -83,9 +84,8 @@ const (
 type PushMode int
 
 const (
-	PushModeSimple   PushMode = iota + 1 // registry/image:tag
-	PushModeProject                      // registry/project/image:tag
-	PushModePreserve                     // Preserve original project path
+	PushModeSimple  PushMode = iota + 1 // registry/image:tag
+	PushModeProject                     // registry/project/image:tag (智能项目名称选择)
 )
 
 // DefaultConfig returns a configuration with default values
@@ -97,8 +97,9 @@ func DefaultConfig() *Config {
 			Enabled: false,
 		},
 		Runtime: RuntimeConfig{
-			Preferred: "",
-			Timeout:   5 * time.Minute,
+			Preferred:    "",
+			Timeout:      5 * time.Minute,
+			AutoFallback: false,
 			Retry: RetryConfig{
 				MaxAttempts: 3,
 				Delay:       time.Second,
