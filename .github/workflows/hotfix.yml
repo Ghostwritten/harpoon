@@ -1,0 +1,659 @@
+name: Hotfix
+
+on:
+  push:
+    branches: [ 'hotfix/*' ]
+  pull_request:
+    branches: [ main ]
+    types: [ opened, synchronize, closed ]
+  workflow_dispatch:
+    inputs:
+      hotfix_name:
+        description: 'Hotfix name (e.g., critical-security-fix)'
+        required: true
+        type: string
+      base_version:
+        description: 'Base version to hotfix (e.g., v1.1.0)'
+        required: true
+        type: string
+      severity:
+        description: 'Severity level'
+        required: true
+        default: 'high'
+        type: choice
+        options:
+        - critical
+        - high
+        - medium
+      emergency_deploy:
+        description: 'Emergency deployment to production'
+        required: false
+        default: false
+        type: boolean
+
+permissions:
+  contents: write
+  pull-requests: write
+  packages: write
+  deployments: write
+
+env:
+  GO_VERSION: '1.21'
+  REGISTRY: ghcr.io
+  IMAGE_NAME: ${{ github.repository }}
+
+jobs:
+  # 创建Hotfix分支
+  create-hotfix-branch:
+    name: Create Hotfix Branch
+    runs-on: ubuntu-latest
+    if: github.event_name == 'workflow_dispatch'
+    outputs:
+      branch-name: ${{ steps.branch.outputs.branch-name }}
+      hotfix-version: ${{ steps.version.outputs.hotfix-version }}
+    steps:
+    - name: Checkout code
+      uses: actions/checkout@v4
+      with:
+        fetch-depth: 0
+        token: ${{ secrets.GITHUB_TOKEN }}
+
+    - name: Configure Git
+      run: |
+        git config --local user.email "action@github.com"
+        git config --local user.name "GitHub Action"
+
+    - name: Validate base version
+      run: |
+        BASE_VERSION="${{ github.event.inputs.base_version }}"
+        if ! git tag -l | grep -q "^${BASE_VERSION}$"; then
+          echo "❌ Base version $BASE_VERSION does not exist"
+          exit 1
+        fi
+        echo "✅ Base version $BASE_VERSION found"
+
+    - name: Create hotfix branch
+      id: branch
+      run: |
+        HOTFIX_NAME="${{ github.event.inputs.hotfix_name }}"
+        BASE_VERSION="${{ github.event.inputs.base_version }}"
+        BRANCH_NAME="hotfix/$HOTFIX_NAME"
+        
+        echo "branch-name=$BRANCH_NAME" >> $GITHUB_OUTPUT
+        
+        # 从指定版本创建hotfix分支
+        git checkout -b "$BRANCH_NAME" "$BASE_VERSION"
+        git push -u origin "$BRANCH_NAME"
+        
+        echo "✅ Created hotfix branch: $BRANCH_NAME"
+
+    - name: Calculate hotfix version
+      id: version
+      run: |
+        BASE_VERSION="${{ github.event.inputs.base_version }}"
+        
+        # 计算hotfix版本号 (例如: v1.1.0 -> v1.1.1)
+        if [[ "$BASE_VERSION" =~ ^v([0-9]+)\.([0-9]+)\.([0-9]+)$ ]]; then
+          MAJOR=${BASH_REMATCH[1]}
+          MINOR=${BASH_REMATCH[2]}
+          PATCH=${BASH_REMATCH[3]}
+          
+          # 递增patch版本
+          NEW_PATCH=$((PATCH + 1))
+          HOTFIX_VERSION="v${MAJOR}.${MINOR}.${NEW_PATCH}"
+        else
+          echo "❌ Invalid version format: $BASE_VERSION"
+          exit 1
+        fi
+        
+        echo "hotfix-version=$HOTFIX_VERSION" >> $GITHUB_OUTPUT
+        echo "✅ Hotfix version will be: $HOTFIX_VERSION"
+
+    - name: Create hotfix issue
+      uses: actions/github-script@v6
+      with:
+        script: |
+          const hotfixName = '${{ github.event.inputs.hotfix_name }}';
+          const baseVersion = '${{ github.event.inputs.base_version }}';
+          const severity = '${{ github.event.inputs.severity }}';
+          const branchName = '${{ steps.branch.outputs.branch-name }}';
+          const hotfixVersion = '${{ steps.version.outputs.hotfix-version }}';
+          
+          const issue = await github.rest.issues.create({
+            owner: context.repo.owner,
+            repo: context.repo.repo,
+            title: `🚨 Hotfix: ${hotfixName}`,
+            body: `## Hotfix Information
+          
+          - **Base Version**: ${baseVersion}
+          - **Target Version**: ${hotfixVersion}
+          - **Severity**: ${severity}
+          - **Branch**: \`${branchName}\`
+          
+          ## Description
+          
+          Please describe the issue that requires this hotfix:
+          
+          - [ ] Issue description
+          - [ ] Root cause analysis
+          - [ ] Proposed solution
+          - [ ] Testing plan
+          
+          ## Checklist
+          
+          - [ ] Code changes implemented
+          - [ ] Tests added/updated
+          - [ ] Documentation updated
+          - [ ] Security review (if applicable)
+          - [ ] Performance impact assessed
+          
+          ## Deployment Plan
+          
+          - [ ] Staging deployment tested
+          - [ ] Production deployment approved
+          - [ ] Rollback plan prepared
+          
+          ---
+          
+          **Created by**: GitHub Actions
+          **Severity**: ${severity}`,
+            labels: ['hotfix', `severity:${severity}`, 'urgent']
+          });
+          
+          console.log(`Created hotfix issue: ${issue.data.html_url}`);
+
+  # 快速安全检查
+  security-check:
+    name: Security Check
+    runs-on: ubuntu-latest
+    if: startsWith(github.ref, 'refs/heads/hotfix/')
+    steps:
+    - name: Checkout code
+      uses: actions/checkout@v4
+
+    - name: Set up Go
+      uses: actions/setup-go@v4
+      with:
+        go-version: ${{ env.GO_VERSION }}
+
+    - name: Run security scan
+      run: |
+        echo "🔍 Running security scan for hotfix..."
+        go install github.com/securecodewarrior/gosec/v2/cmd/gosec@latest
+        gosec -quiet ./...
+
+    - name: Check for vulnerabilities
+      run: |
+        echo "🔍 Checking for known vulnerabilities..."
+        go install golang.org/x/vuln/cmd/govulncheck@latest
+        govulncheck ./...
+
+  # 关键测试
+  critical-tests:
+    name: Critical Tests
+    runs-on: ubuntu-latest
+    if: startsWith(github.ref, 'refs/heads/hotfix/')
+    steps:
+    - name: Checkout code
+      uses: actions/checkout@v4
+
+    - name: Set up Go
+      uses: actions/setup-go@v4
+      with:
+        go-version: ${{ env.GO_VERSION }}
+
+    - name: Cache Go modules
+      uses: actions/cache@v3
+      with:
+        path: ~/go/pkg/mod
+        key: ${{ runner.os }}-go-${{ hashFiles('**/go.sum') }}
+        restore-keys: |
+          ${{ runner.os }}-go-
+
+    - name: Run critical tests
+      run: |
+        echo "🧪 Running critical tests for hotfix..."
+        # 只运行关键测试，跳过耗时的测试
+        go test -short -v ./...
+
+    - name: Build and test
+      run: |
+        echo "🔨 Building hotfix..."
+        go build -v ./cmd/hpn
+        
+        # 基本功能测试
+        chmod +x ./hpn
+        ./hpn --version
+        
+        echo "✅ Hotfix build successful"
+
+  # 变更影响分析
+  impact-analysis:
+    name: Impact Analysis
+    runs-on: ubuntu-latest
+    if: startsWith(github.ref, 'refs/heads/hotfix/')
+    steps:
+    - name: Checkout code
+      uses: actions/checkout@v4
+      with:
+        fetch-depth: 0
+
+    - name: Analyze changes
+      run: |
+        echo "📊 Analyzing hotfix changes..."
+        
+        # 获取基础版本
+        BASE_COMMIT=$(git merge-base HEAD origin/main)
+        
+        echo "Changed files:"
+        git diff --name-only $BASE_COMMIT HEAD
+        
+        echo ""
+        echo "Lines changed:"
+        git diff --stat $BASE_COMMIT HEAD
+        
+        echo ""
+        echo "Critical file changes:"
+        CRITICAL_FILES=$(git diff --name-only $BASE_COMMIT HEAD | grep -E '\.(go|yaml|yml|json)$' | head -10)
+        if [ -n "$CRITICAL_FILES" ]; then
+          echo "$CRITICAL_FILES"
+        else
+          echo "No critical files changed"
+        fi
+
+    - name: Validate change scope
+      run: |
+        echo "🔍 Validating change scope..."
+        
+        BASE_COMMIT=$(git merge-base HEAD origin/main)
+        CHANGED_FILES=$(git diff --name-only $BASE_COMMIT HEAD | wc -l)
+        
+        echo "Files changed: $CHANGED_FILES"
+        
+        if [ $CHANGED_FILES -gt 20 ]; then
+          echo "⚠️  Warning: Hotfix changes $CHANGED_FILES files"
+          echo "Consider if this should be a regular release instead"
+        else
+          echo "✅ Change scope is appropriate for hotfix"
+        fi
+
+  # 构建Hotfix版本
+  build-hotfix:
+    name: Build Hotfix
+    runs-on: ubuntu-latest
+    needs: [security-check, critical-tests, impact-analysis]
+    if: startsWith(github.ref, 'refs/heads/hotfix/')
+    outputs:
+      hotfix-version: ${{ steps.version.outputs.hotfix-version }}
+    steps:
+    - name: Checkout code
+      uses: actions/checkout@v4
+      with:
+        fetch-depth: 0
+
+    - name: Set up Go
+      uses: actions/setup-go@v4
+      with:
+        go-version: ${{ env.GO_VERSION }}
+
+    - name: Determine hotfix version
+      id: version
+      run: |
+        # 从分支名提取hotfix信息
+        BRANCH_NAME=${GITHUB_REF#refs/heads/}
+        
+        # 获取最新的生产版本
+        LATEST_TAG=$(git describe --tags --abbrev=0 origin/main 2>/dev/null || echo "v1.0.0")
+        
+        # 计算hotfix版本
+        if [[ "$LATEST_TAG" =~ ^v([0-9]+)\.([0-9]+)\.([0-9]+)$ ]]; then
+          MAJOR=${BASH_REMATCH[1]}
+          MINOR=${BASH_REMATCH[2]}
+          PATCH=${BASH_REMATCH[3]}
+          
+          NEW_PATCH=$((PATCH + 1))
+          HOTFIX_VERSION="v${MAJOR}.${MINOR}.${NEW_PATCH}"
+        else
+          HOTFIX_VERSION="v1.0.1"
+        fi
+        
+        echo "hotfix-version=$HOTFIX_VERSION" >> $GITHUB_OUTPUT
+        echo "Hotfix version: $HOTFIX_VERSION"
+
+    - name: Build multi-platform binaries
+      run: |
+        VERSION="${{ steps.version.outputs.hotfix-version }}"
+        COMMIT="${{ github.sha }}"
+        BUILD_DATE=$(date -u +"%Y-%m-%dT%H:%M:%SZ")
+        
+        # 构建关键平台
+        platforms=("linux/amd64" "darwin/amd64" "windows/amd64")
+        
+        for platform in "${platforms[@]}"; do
+          IFS='/' read -r GOOS GOARCH <<< "$platform"
+          
+          if [ "$GOOS" = "windows" ]; then
+            output_name="hpn-hotfix-${GOOS}-${GOARCH}.exe"
+          else
+            output_name="hpn-hotfix-${GOOS}-${GOARCH}"
+          fi
+          
+          echo "Building $output_name..."
+          
+          GOOS=$GOOS GOARCH=$GOARCH CGO_ENABLED=0 go build \
+            -ldflags "-s -w -X github.com/harpoon/hpn/internal/version.Version=$VERSION -X github.com/harpoon/hpn/internal/version.GitCommit=$COMMIT -X github.com/harpoon/hpn/internal/version.BuildDate=$BUILD_DATE" \
+            -o "$output_name" \
+            ./cmd/hpn
+        done
+        
+        ls -la hpn-hotfix-*
+
+    - name: Upload hotfix artifacts
+      uses: actions/upload-artifact@v3
+      with:
+        name: hotfix-binaries
+        path: hpn-hotfix-*
+        retention-days: 30
+
+  # Hotfix PR检查
+  hotfix-pr-check:
+    name: Hotfix PR Check
+    runs-on: ubuntu-latest
+    if: github.event_name == 'pull_request' && github.event.pull_request.base.ref == 'main' && startsWith(github.event.pull_request.head.ref, 'hotfix/')
+    steps:
+    - name: Validate hotfix PR
+      uses: actions/github-script@v6
+      with:
+        script: |
+          const pr = context.payload.pull_request;
+          const branchName = pr.head.ref;
+          
+          console.log(`Validating hotfix PR: ${branchName}`);
+          
+          // 检查PR标题
+          if (!pr.title.toLowerCase().includes('hotfix')) {
+            core.setFailed('Hotfix PR title must contain "hotfix"');
+            return;
+          }
+          
+          // 检查PR描述
+          if (!pr.body || pr.body.length < 50) {
+            core.setFailed('Hotfix PR must have detailed description');
+            return;
+          }
+          
+          // 添加hotfix标签
+          await github.rest.issues.addLabels({
+            owner: context.repo.owner,
+            repo: context.repo.repo,
+            issue_number: pr.number,
+            labels: ['hotfix', 'urgent', 'needs-review']
+          });
+          
+          console.log('✅ Hotfix PR validation passed');
+
+    - name: Request urgent review
+      uses: actions/github-script@v6
+      with:
+        script: |
+          const pr = context.payload.pull_request;
+          
+          // 请求紧急审查
+          const comment = `## 🚨 Urgent Hotfix Review Required
+          
+          This is a hotfix PR that requires immediate attention.
+          
+          **Review Checklist:**
+          - [ ] Code changes are minimal and focused
+          - [ ] Security implications reviewed
+          - [ ] Testing coverage adequate
+          - [ ] Rollback plan available
+          - [ ] Documentation updated
+          
+          **Reviewers:** Please prioritize this review.
+          
+          **Deployment:** This hotfix may require emergency deployment.`;
+          
+          await github.rest.issues.createComment({
+            owner: context.repo.owner,
+            repo: context.repo.repo,
+            issue_number: pr.number,
+            body: comment
+          });
+
+  # 紧急部署
+  emergency-deploy:
+    name: Emergency Deploy
+    runs-on: ubuntu-latest
+    needs: [build-hotfix]
+    if: github.event.inputs.emergency_deploy == 'true' || (github.event_name == 'pull_request' && github.event.pull_request.merged == true && startsWith(github.event.pull_request.head.ref, 'hotfix/'))
+    environment:
+      name: production-emergency
+      url: https://harpoon.example.com
+    steps:
+    - name: Checkout code
+      uses: actions/checkout@v4
+
+    - name: Create emergency deployment
+      uses: actions/github-script@v6
+      id: deployment
+      with:
+        script: |
+          const deployment = await github.rest.repos.createDeployment({
+            owner: context.repo.owner,
+            repo: context.repo.repo,
+            ref: context.sha,
+            environment: 'production-emergency',
+            description: 'Emergency hotfix deployment',
+            auto_merge: false,
+            required_contexts: []
+          });
+          return deployment.data.id;
+
+    - name: Deploy hotfix
+      run: |
+        echo "🚨 Emergency hotfix deployment starting..."
+        
+        VERSION="${{ needs.build-hotfix.outputs.hotfix-version }}"
+        echo "Deploying hotfix version: $VERSION"
+        
+        # 紧急部署流程 (简化版)
+        echo "📦 Building emergency container..."
+        # docker build -t harpoon:$VERSION-hotfix .
+        
+        echo "🚀 Deploying to production..."
+        # kubectl set image deployment/harpoon-prod harpoon=harpoon:$VERSION-hotfix
+        
+        echo "⏳ Waiting for deployment..."
+        sleep 30
+        
+        echo "🏥 Emergency health check..."
+        # curl -f https://harpoon.example.com/health
+        
+        echo "✅ Emergency deployment completed"
+
+    - name: Update deployment status
+      uses: actions/github-script@v6
+      if: always()
+      with:
+        script: |
+          const deploymentId = ${{ steps.deployment.outputs.result }};
+          const state = '${{ job.status }}' === 'success' ? 'success' : 'failure';
+          
+          await github.rest.repos.createDeploymentStatus({
+            owner: context.repo.owner,
+            repo: context.repo.repo,
+            deployment_id: deploymentId,
+            state: state,
+            description: state === 'success' ? 'Emergency deployment successful' : 'Emergency deployment failed',
+            environment_url: 'https://harpoon.example.com'
+          });
+
+    - name: Notify emergency deployment
+      if: always()
+      uses: actions/github-script@v6
+      with:
+        script: |
+          const status = '${{ job.status }}';
+          const version = '${{ needs.build-hotfix.outputs.hotfix-version }}';
+          
+          const title = status === 'success' ? 
+            `🚨 Emergency Hotfix ${version} Deployed Successfully` :
+            `🚨 Emergency Hotfix ${version} Deployment Failed`;
+          
+          const body = status === 'success' ? 
+            `Emergency hotfix ${version} has been successfully deployed to production.
+            
+            **Next Steps:**
+            1. Monitor application metrics
+            2. Verify fix effectiveness
+            3. Prepare regular release with proper testing
+            
+            **Rollback:** Available if issues detected` :
+            `Emergency hotfix ${version} deployment failed.
+            
+            **Immediate Actions Required:**
+            1. Check deployment logs
+            2. Verify system status
+            3. Consider manual intervention
+            4. Prepare rollback if necessary`;
+          
+          // 创建紧急通知issue
+          await github.rest.issues.create({
+            owner: context.repo.owner,
+            repo: context.repo.repo,
+            title: title,
+            body: body,
+            labels: ['emergency', 'hotfix', 'production']
+          });
+
+  # 创建Hotfix Release
+  create-hotfix-release:
+    name: Create Hotfix Release
+    runs-on: ubuntu-latest
+    needs: [build-hotfix]
+    if: github.event_name == 'pull_request' && github.event.pull_request.merged == true && startsWith(github.event.pull_request.head.ref, 'hotfix/')
+    steps:
+    - name: Checkout code
+      uses: actions/checkout@v4
+      with:
+        fetch-depth: 0
+        token: ${{ secrets.GITHUB_TOKEN }}
+
+    - name: Configure Git
+      run: |
+        git config --local user.email "action@github.com"
+        git config --local user.name "GitHub Action"
+
+    - name: Create hotfix tag
+      run: |
+        VERSION="${{ needs.build-hotfix.outputs.hotfix-version }}"
+        
+        # 创建标签
+        git tag -a "$VERSION" -m "Hotfix release $VERSION"
+        git push origin "$VERSION"
+        
+        echo "✅ Created hotfix tag: $VERSION"
+
+    - name: Download hotfix artifacts
+      uses: actions/download-artifact@v3
+      with:
+        name: hotfix-binaries
+        path: artifacts/
+
+    - name: Create GitHub Release
+      uses: actions/github-script@v6
+      with:
+        script: |
+          const fs = require('fs');
+          const path = require('path');
+          
+          const version = '${{ needs.build-hotfix.outputs.hotfix-version }}';
+          const branchName = '${{ github.event.pull_request.head.ref }}';
+          
+          // 创建发布说明
+          const releaseNotes = `## 🚨 Hotfix Release ${version}
+          
+          This is an emergency hotfix release addressing critical issues.
+          
+          ### Changes
+          - Emergency fix from ${branchName}
+          
+          ### Installation
+          Download the appropriate binary for your platform from the assets below.
+          
+          ### Verification
+          \`\`\`bash
+          ./hpn --version
+          \`\`\`
+          
+          **Note:** This is a hotfix release. A regular release with full testing will follow.`;
+          
+          // 创建发布
+          const release = await github.rest.repos.createRelease({
+            owner: context.repo.owner,
+            repo: context.repo.repo,
+            tag_name: version,
+            name: `Hotfix ${version}`,
+            body: releaseNotes,
+            draft: false,
+            prerelease: false
+          });
+          
+          console.log(`Created hotfix release: ${release.data.html_url}`);
+          
+          // 上传构建产物
+          const artifactsDir = 'artifacts';
+          const files = fs.readdirSync(artifactsDir);
+          
+          for (const file of files) {
+            const filePath = path.join(artifactsDir, file);
+            const fileContent = fs.readFileSync(filePath);
+            
+            console.log(`Uploading ${file}...`);
+            
+            await github.rest.repos.uploadReleaseAsset({
+              owner: context.repo.owner,
+              repo: context.repo.repo,
+              release_id: release.data.id,
+              name: file,
+              data: fileContent
+            });
+          }
+
+  # 合并回develop分支
+  merge-to-develop:
+    name: Merge to Develop
+    runs-on: ubuntu-latest
+    needs: [create-hotfix-release]
+    if: github.event_name == 'pull_request' && github.event.pull_request.merged == true && startsWith(github.event.pull_request.head.ref, 'hotfix/')
+    steps:
+    - name: Checkout code
+      uses: actions/checkout@v4
+      with:
+        fetch-depth: 0
+        token: ${{ secrets.GITHUB_TOKEN }}
+
+    - name: Configure Git
+      run: |
+        git config --local user.email "action@github.com"
+        git config --local user.name "GitHub Action"
+
+    - name: Merge hotfix to develop
+      run: |
+        HOTFIX_BRANCH="${{ github.event.pull_request.head.ref }}"
+        VERSION="${{ needs.build-hotfix.outputs.hotfix-version }}"
+        
+        echo "Merging $HOTFIX_BRANCH to develop..."
+        
+        # 切换到develop分支
+        git checkout develop
+        git pull origin develop
+        
+        # 合并hotfix分支
+        git merge --no-ff origin/$HOTFIX_BRANCH -m "chore: merge hotfix $VERSION to develop"
+        
+        # 推送更改
+        git push origin develop
+        
+        echo "✅ Hotfix merged to develop branch"

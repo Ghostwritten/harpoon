@@ -4,119 +4,569 @@ on:
   push:
     tags:
       - 'v*'
+  workflow_dispatch:
+    inputs:
+      tag:
+        description: 'Release tag (e.g., v1.1.0)'
+        required: true
+        type: string
+      prerelease:
+        description: 'Mark as pre-release'
+        required: false
+        default: false
+        type: boolean
+      draft:
+        description: 'Create as draft'
+        required: false
+        default: false
+        type: boolean
 
 permissions:
   contents: write
+  packages: write
+
+env:
+  GO_VERSION: '1.21'
+  REGISTRY: ghcr.io
+  IMAGE_NAME: ${{ github.repository }}
 
 jobs:
-  release:
+  # 验证发布条件
+  validate-release:
+    name: Validate Release
     runs-on: ubuntu-latest
+    outputs:
+      version: ${{ steps.version.outputs.version }}
+      is-prerelease: ${{ steps.version.outputs.is-prerelease }}
     steps:
-    - uses: actions/checkout@v4
+    - name: Checkout code
+      uses: actions/checkout@v4
       with:
         fetch-depth: 0
+
+    - name: Get version from tag
+      id: version
+      run: |
+        if [ "${{ github.event_name }}" = "workflow_dispatch" ]; then
+          VERSION="${{ github.event.inputs.tag }}"
+        else
+          VERSION="${GITHUB_REF#refs/tags/}"
+        fi
+        
+        echo "version=$VERSION" >> $GITHUB_OUTPUT
+        echo "Release version: $VERSION"
+        
+        # 检查是否为预发布版本
+        if [[ "$VERSION" =~ -alpha|-beta|-rc ]]; then
+          echo "is-prerelease=true" >> $GITHUB_OUTPUT
+          echo "This is a pre-release version"
+        else
+          echo "is-prerelease=false" >> $GITHUB_OUTPUT
+          echo "This is a stable release version"
+        fi
+
+    - name: Validate version format
+      run: |
+        VERSION="${{ steps.version.outputs.version }}"
+        if [[ ! "$VERSION" =~ ^v[0-9]+\.[0-9]+\.[0-9]+(-[a-z0-9]+(\.[0-9]+)?)?$ ]]; then
+          echo "❌ Invalid version format: $VERSION"
+          echo "Expected format: v1.2.3 or v1.2.3-alpha.1"
+          exit 1
+        fi
+        echo "✅ Version format is valid: $VERSION"
+
+    - name: Check if tag exists
+      run: |
+        VERSION="${{ steps.version.outputs.version }}"
+        if git tag -l | grep -q "^${VERSION}$"; then
+          echo "✅ Tag $VERSION exists"
+        else
+          echo "❌ Tag $VERSION does not exist"
+          exit 1
+        fi
+
+    - name: Verify changelog entry
+      run: |
+        VERSION="${{ steps.version.outputs.version }}"
+        if [ -f "docs/changelog.md" ]; then
+          if grep -q "$VERSION" docs/changelog.md; then
+            echo "✅ Changelog contains entry for $VERSION"
+          else
+            echo "⚠️  Changelog does not contain entry for $VERSION"
+          fi
+        else
+          echo "⚠️  Changelog file not found"
+        fi
+
+  # 运行完整测试套件
+  test-suite:
+    name: Test Suite
+    runs-on: ${{ matrix.os }}
+    needs: validate-release
+    strategy:
+      fail-fast: true
+      matrix:
+        os: [ubuntu-latest, windows-latest, macos-latest]
+        go-version: ['1.21']
+    steps:
+    - name: Checkout code
+      uses: actions/checkout@v4
 
     - name: Set up Go
       uses: actions/setup-go@v4
       with:
-        go-version: '1.21'
+        go-version: ${{ matrix.go-version }}
 
-    - name: Get version
-      id: version
-      run: echo "VERSION=${GITHUB_REF#refs/tags/}" >> $GITHUB_OUTPUT
+    - name: Cache Go modules
+      uses: actions/cache@v3
+      with:
+        path: ~/go/pkg/mod
+        key: ${{ runner.os }}-go-${{ hashFiles('**/go.sum') }}
+        restore-keys: |
+          ${{ runner.os }}-go-
 
-    - name: Build binaries
+    - name: Run tests
+      run: go test -v -race ./...
+
+    - name: Build and test
       run: |
-        # Build for all platforms
-        platforms=(
-          "linux/amd64"
-          "linux/arm64"
-          "darwin/amd64"
-          "darwin/arm64"
-          "windows/amd64"
-        )
+        go build -v ./cmd/hpn
         
-        mkdir -p dist
+        # Test basic functionality
+        if [ "${{ runner.os }}" = "Windows" ]; then
+          ./hpn.exe --version
+        else
+          chmod +x ./hpn
+          ./hpn --version
+        fi
+
+  # 安全扫描
+  security-scan:
+    name: Security Scan
+    runs-on: ubuntu-latest
+    needs: validate-release
+    steps:
+    - name: Checkout code
+      uses: actions/checkout@v4
+
+    - name: Set up Go
+      uses: actions/setup-go@v4
+      with:
+        go-version: ${{ env.GO_VERSION }}
+
+    - name: Run security scan
+      run: |
+        go install github.com/securecodewarrior/gosec/v2/cmd/gosec@latest
+        gosec ./...
+
+    - name: Run vulnerability check
+      run: |
+        go install golang.org/x/vuln/cmd/govulncheck@latest
+        govulncheck ./...
+
+  # 构建多平台二进制文件
+  build-binaries:
+    name: Build Binaries
+    runs-on: ubuntu-latest
+    needs: [validate-release, test-suite, security-scan]
+    strategy:
+      matrix:
+        include:
+          - goos: linux
+            goarch: amd64
+          - goos: linux
+            goarch: arm64
+          - goos: darwin
+            goarch: amd64
+          - goos: darwin
+            goarch: arm64
+          - goos: windows
+            goarch: amd64
+          - goos: freebsd
+            goarch: amd64
+    steps:
+    - name: Checkout code
+      uses: actions/checkout@v4
+
+    - name: Set up Go
+      uses: actions/setup-go@v4
+      with:
+        go-version: ${{ env.GO_VERSION }}
+
+    - name: Cache Go modules
+      uses: actions/cache@v3
+      with:
+        path: ~/go/pkg/mod
+        key: ${{ runner.os }}-go-${{ hashFiles('**/go.sum') }}
+        restore-keys: |
+          ${{ runner.os }}-go-
+
+    - name: Build binary
+      env:
+        GOOS: ${{ matrix.goos }}
+        GOARCH: ${{ matrix.goarch }}
+        CGO_ENABLED: 0
+      run: |
+        VERSION="${{ needs.validate-release.outputs.version }}"
+        COMMIT="${{ github.sha }}"
+        BUILD_DATE=$(date -u +"%Y-%m-%dT%H:%M:%SZ")
         
-        for platform in "${platforms[@]}"; do
-          IFS='/' read -r GOOS GOARCH <<< "$platform"
+        # 构建ldflags
+        LDFLAGS="-s -w"
+        LDFLAGS="$LDFLAGS -X github.com/harpoon/hpn/internal/version.Version=$VERSION"
+        LDFLAGS="$LDFLAGS -X github.com/harpoon/hpn/internal/version.GitCommit=$COMMIT"
+        LDFLAGS="$LDFLAGS -X github.com/harpoon/hpn/internal/version.GitBranch=main"
+        LDFLAGS="$LDFLAGS -X github.com/harpoon/hpn/internal/version.BuildDate=$BUILD_DATE"
+        LDFLAGS="$LDFLAGS -X github.com/harpoon/hpn/internal/version.BuildUser=github-actions"
+        LDFLAGS="$LDFLAGS -X github.com/harpoon/hpn/internal/version.BuildHost=github-actions"
+        
+        # 确定输出文件名
+        if [ "${{ matrix.goos }}" = "windows" ]; then
+          OUTPUT="hpn-${{ matrix.goos }}-${{ matrix.goarch }}.exe"
+        else
+          OUTPUT="hpn-${{ matrix.goos }}-${{ matrix.goarch }}"
+        fi
+        
+        echo "Building $OUTPUT..."
+        go build -ldflags "$LDFLAGS" -o "$OUTPUT" ./cmd/hpn
+        
+        # 验证构建结果
+        ls -lh "$OUTPUT"
+        
+        # 测试版本信息（仅限Linux AMD64）
+        if [ "${{ matrix.goos }}" = "linux" ] && [ "${{ matrix.goarch }}" = "amd64" ]; then
+          chmod +x "$OUTPUT"
+          ./"$OUTPUT" --version
+        fi
+
+    - name: Upload binary artifact
+      uses: actions/upload-artifact@v3
+      with:
+        name: binaries
+        path: hpn-*
+        retention-days: 7
+
+  # 创建发布包
+  create-packages:
+    name: Create Release Packages
+    runs-on: ubuntu-latest
+    needs: [validate-release, build-binaries]
+    steps:
+    - name: Checkout code
+      uses: actions/checkout@v4
+
+    - name: Download binary artifacts
+      uses: actions/download-artifact@v3
+      with:
+        name: binaries
+        path: binaries/
+
+    - name: Create release packages
+      run: |
+        VERSION="${{ needs.validate-release.outputs.version }}"
+        mkdir -p packages
+        
+        # 为每个二进制文件创建包
+        for binary in binaries/hpn-*; do
+          if [ ! -f "$binary" ]; then continue; fi
           
-          if [ "$GOOS" = "windows" ]; then
-            output_name="hpn-${GOOS}-${GOARCH}.exe"
-          else
-            output_name="hpn-${GOOS}-${GOARCH}"
-          fi
-          
-          echo "Building ${output_name}..."
-          
-          GOOS=${GOOS} GOARCH=${GOARCH} CGO_ENABLED=0 go build \
-            -trimpath \
-            -ldflags "-X main.version=${{ steps.version.outputs.VERSION }} -X main.commit=${{ github.sha }} -X main.date=$(date -u +%Y-%m-%dT%H:%M:%SZ) -s -w" \
-            -o dist/${output_name} \
-            ./cmd/hpn
-          
-          # Make executable on Unix-like systems
-          if [[ "${GOOS}" != "windows" ]]; then
-            chmod +x dist/${output_name}
+          # 提取平台信息
+          basename_binary=$(basename "$binary")
+          if [[ "$basename_binary" =~ hpn-([^-]+)-([^.]+)(\.exe)?$ ]]; then
+            os="${BASH_REMATCH[1]}"
+            arch="${BASH_REMATCH[2]}"
+            ext="${BASH_REMATCH[3]}"
+            
+            echo "Creating package for $os-$arch..."
+            
+            # 创建临时目录
+            temp_dir="temp-$os-$arch"
+            mkdir -p "$temp_dir"
+            
+            # 复制文件
+            cp "$binary" "$temp_dir/"
+            cp README.md "$temp_dir/"
+            cp LICENSE "$temp_dir/" 2>/dev/null || echo "LICENSE file not found"
+            cp -r docs/ "$temp_dir/" 2>/dev/null || echo "docs directory not found"
+            
+            # 创建包
+            if [ "$os" = "windows" ]; then
+              # Windows使用ZIP
+              package_name="hpn-${VERSION}-${os}-${arch}.zip"
+              (cd "$temp_dir" && zip -r "../packages/$package_name" .)
+            else
+              # Unix系统使用tar.gz
+              package_name="hpn-${VERSION}-${os}-${arch}.tar.gz"
+              tar -czf "packages/$package_name" -C "$temp_dir" .
+            fi
+            
+            echo "Created: $package_name"
+            
+            # 清理临时目录
+            rm -rf "$temp_dir"
           fi
         done
+        
+        # 显示创建的包
+        echo "Created packages:"
+        ls -lh packages/
 
-    - name: Create packages
+    - name: Generate checksums
       run: |
-        cd dist
-        
-        # Create tar.gz packages for Unix-like systems
-        tar -czf hpn-${{ steps.version.outputs.VERSION }}-linux-amd64.tar.gz \
-          hpn-linux-amd64 ../README.md ../LICENSE ../config.yaml.example ../docs/
-        
-        tar -czf hpn-${{ steps.version.outputs.VERSION }}-linux-arm64.tar.gz \
-          hpn-linux-arm64 ../README.md ../LICENSE ../config.yaml.example ../docs/
-        
-        tar -czf hpn-${{ steps.version.outputs.VERSION }}-darwin-amd64.tar.gz \
-          hpn-darwin-amd64 ../README.md ../LICENSE ../config.yaml.example ../docs/
-        
-        tar -czf hpn-${{ steps.version.outputs.VERSION }}-darwin-arm64.tar.gz \
-          hpn-darwin-arm64 ../README.md ../LICENSE ../config.yaml.example ../docs/
-        
-        # Create zip package for Windows
-        zip -r hpn-${{ steps.version.outputs.VERSION }}-windows-amd64.zip \
-          hpn-windows-amd64.exe ../README.md ../LICENSE ../config.yaml.example ../docs/
+        cd packages
+        sha256sum * > checksums.txt
+        echo "Generated checksums:"
+        cat checksums.txt
+
+    - name: Upload package artifacts
+      uses: actions/upload-artifact@v3
+      with:
+        name: release-packages
+        path: |
+          packages/*.tar.gz
+          packages/*.zip
+          packages/checksums.txt
+        retention-days: 30
+
+  # 构建Docker镜像
+  build-docker:
+    name: Build Docker Image
+    runs-on: ubuntu-latest
+    needs: [validate-release, test-suite]
+    steps:
+    - name: Checkout code
+      uses: actions/checkout@v4
+
+    - name: Set up Docker Buildx
+      uses: docker/setup-buildx-action@v3
+
+    - name: Log in to Container Registry
+      uses: docker/login-action@v3
+      with:
+        registry: ${{ env.REGISTRY }}
+        username: ${{ github.actor }}
+        password: ${{ secrets.GITHUB_TOKEN }}
+
+    - name: Extract metadata
+      id: meta
+      uses: docker/metadata-action@v5
+      with:
+        images: ${{ env.REGISTRY }}/${{ env.IMAGE_NAME }}
+        tags: |
+          type=ref,event=tag
+          type=semver,pattern={{version}}
+          type=semver,pattern={{major}}.{{minor}}
+          type=semver,pattern={{major}}
+
+    - name: Build and push Docker image
+      uses: docker/build-push-action@v5
+      with:
+        context: .
+        platforms: linux/amd64,linux/arm64
+        push: true
+        tags: ${{ steps.meta.outputs.tags }}
+        labels: ${{ steps.meta.outputs.labels }}
+        build-args: |
+          VERSION=${{ needs.validate-release.outputs.version }}
+          COMMIT=${{ github.sha }}
+          BUILD_DATE=${{ github.event.head_commit.timestamp }}
+
+  # 创建GitHub Release
+  create-release:
+    name: Create GitHub Release
+    runs-on: ubuntu-latest
+    needs: [validate-release, test-suite, security-scan, create-packages, build-docker]
+    steps:
+    - name: Checkout code
+      uses: actions/checkout@v4
+
+    - name: Download package artifacts
+      uses: actions/download-artifact@v3
+      with:
+        name: release-packages
+        path: packages/
 
     - name: Generate release notes
+      id: release-notes
       run: |
-        echo "# Harpoon ${{ steps.version.outputs.VERSION }}" > release-notes.md
+        VERSION="${{ needs.validate-release.outputs.version }}"
+        
+        # 尝试从changelog提取发布说明
+        if [ -f "docs/changelog.md" ]; then
+          # 提取当前版本的变更内容
+          awk "/^## \[$VERSION\]/{flag=1; next} /^## \[/{flag=0} flag" docs/changelog.md > release-notes.md
+          
+          if [ -s release-notes.md ]; then
+            echo "Found changelog entry for $VERSION"
+          else
+            echo "No specific changelog entry found for $VERSION, using generic notes"
+            echo "Release $VERSION" > release-notes.md
+            echo "" >> release-notes.md
+            echo "See [CHANGELOG](docs/changelog.md) for details." >> release-notes.md
+          fi
+        else
+          echo "No changelog found, creating generic release notes"
+          echo "Release $VERSION" > release-notes.md
+        fi
+        
+        # 添加下载链接和校验和信息
         echo "" >> release-notes.md
-        echo "## What's New" >> release-notes.md
+        echo "## 📦 Assets" >> release-notes.md
         echo "" >> release-notes.md
-        echo "This is the first stable release of Harpoon - a powerful cloud-native container image management tool." >> release-notes.md
+        echo "Download the appropriate binary for your platform from the assets below." >> release-notes.md
         echo "" >> release-notes.md
-        echo "### Key Features" >> release-notes.md
-        echo "- Multi-container runtime support (Docker, Podman, Nerdctl)" >> release-notes.md
-        echo "- Flexible operation modes for different deployment scenarios" >> release-notes.md
-        echo "- Cross-platform support (Linux, macOS, Windows)" >> release-notes.md
-        echo "- Configuration management with YAML files" >> release-notes.md
-        echo "- Proxy support for corporate environments" >> release-notes.md
-        echo "- Batch operations for bulk image processing" >> release-notes.md
+        echo "### Checksums" >> release-notes.md
         echo "" >> release-notes.md
-        echo "### Download" >> release-notes.md
+        echo '```' >> release-notes.md
+        cat packages/checksums.txt >> release-notes.md
+        echo '```' >> release-notes.md
         echo "" >> release-notes.md
-        echo "Choose the appropriate binary for your platform:" >> release-notes.md
+        echo "### Docker Image" >> release-notes.md
         echo "" >> release-notes.md
-        echo "| Platform | Architecture | Download |" >> release-notes.md
-        echo "|----------|-------------|----------|" >> release-notes.md
-        echo "| Linux | AMD64 | [hpn-${{ steps.version.outputs.VERSION }}-linux-amd64.tar.gz](https://github.com/ghostwritten/harpoon/releases/download/${{ steps.version.outputs.VERSION }}/hpn-${{ steps.version.outputs.VERSION }}-linux-amd64.tar.gz) |" >> release-notes.md
-        echo "| Linux | ARM64 | [hpn-${{ steps.version.outputs.VERSION }}-linux-arm64.tar.gz](https://github.com/ghostwritten/harpoon/releases/download/${{ steps.version.outputs.VERSION }}/hpn-${{ steps.version.outputs.VERSION }}-linux-arm64.tar.gz) |" >> release-notes.md
-        echo "| macOS | Intel | [hpn-${{ steps.version.outputs.VERSION }}-darwin-amd64.tar.gz](https://github.com/ghostwritten/harpoon/releases/download/${{ steps.version.outputs.VERSION }}/hpn-${{ steps.version.outputs.VERSION }}-darwin-amd64.tar.gz) |" >> release-notes.md
-        echo "| macOS | Apple Silicon | [hpn-${{ steps.version.outputs.VERSION }}-darwin-arm64.tar.gz](https://github.com/ghostwritten/harpoon/releases/download/${{ steps.version.outputs.VERSION }}/hpn-${{ steps.version.outputs.VERSION }}-darwin-arm64.tar.gz) |" >> release-notes.md
-        echo "| Windows | AMD64 | [hpn-${{ steps.version.outputs.VERSION }}-windows-amd64.zip](https://github.com/ghostwritten/harpoon/releases/download/${{ steps.version.outputs.VERSION }}/hpn-${{ steps.version.outputs.VERSION }}-windows-amd64.zip) |" >> release-notes.md
+        echo '```bash' >> release-notes.md
+        echo "docker pull ${{ env.REGISTRY }}/${{ env.IMAGE_NAME }}:$VERSION" >> release-notes.md
+        echo '```' >> release-notes.md
 
-    - name: Create Release
-      uses: softprops/action-gh-release@v1
+    - name: Create GitHub Release
+      uses: actions/github-script@v6
       with:
-        files: |
-          dist/hpn-*
-        body_path: release-notes.md
-        draft: false
-        prerelease: false
-      env:
-        GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        script: |
+          const fs = require('fs');
+          const path = require('path');
+          
+          const version = '${{ needs.validate-release.outputs.version }}';
+          const isPrerelease = '${{ needs.validate-release.outputs.is-prerelease }}' === 'true' || 
+                              '${{ github.event.inputs.prerelease }}' === 'true';
+          const isDraft = '${{ github.event.inputs.draft }}' === 'true';
+          
+          // 读取发布说明
+          let releaseNotes = '';
+          try {
+            releaseNotes = fs.readFileSync('release-notes.md', 'utf8');
+          } catch (error) {
+            releaseNotes = `Release ${version}`;
+          }
+          
+          // 创建发布
+          const release = await github.rest.repos.createRelease({
+            owner: context.repo.owner,
+            repo: context.repo.repo,
+            tag_name: version,
+            name: `Harpoon ${version}`,
+            body: releaseNotes,
+            draft: isDraft,
+            prerelease: isPrerelease
+          });
+          
+          console.log(`Created release: ${release.data.html_url}`);
+          
+          // 上传资产
+          const packagesDir = 'packages';
+          const files = fs.readdirSync(packagesDir);
+          
+          for (const file of files) {
+            const filePath = path.join(packagesDir, file);
+            const fileContent = fs.readFileSync(filePath);
+            
+            console.log(`Uploading ${file}...`);
+            
+            await github.rest.repos.uploadReleaseAsset({
+              owner: context.repo.owner,
+              repo: context.repo.repo,
+              release_id: release.data.id,
+              name: file,
+              data: fileContent
+            });
+            
+            console.log(`Uploaded ${file}`);
+          }
+          
+          return release.data.html_url;
+
+  # 发布后验证
+  post-release-validation:
+    name: Post-Release Validation
+    runs-on: ubuntu-latest
+    needs: [validate-release, create-release]
+    steps:
+    - name: Validate release assets
+      uses: actions/github-script@v6
+      with:
+        script: |
+          const version = '${{ needs.validate-release.outputs.version }}';
+          
+          // 获取发布信息
+          const releases = await github.rest.repos.listReleases({
+            owner: context.repo.owner,
+            repo: context.repo.repo
+          });
+          
+          const release = releases.data.find(r => r.tag_name === version);
+          if (!release) {
+            throw new Error(`Release ${version} not found`);
+          }
+          
+          console.log(`Found release: ${release.name}`);
+          console.log(`Release URL: ${release.html_url}`);
+          console.log(`Assets count: ${release.assets.length}`);
+          
+          // 验证必需的资产
+          const expectedAssets = [
+            'checksums.txt',
+            'hpn-' + version + '-linux-amd64.tar.gz',
+            'hpn-' + version + '-darwin-amd64.tar.gz',
+            'hpn-' + version + '-windows-amd64.zip'
+          ];
+          
+          const assetNames = release.assets.map(a => a.name);
+          
+          for (const expectedAsset of expectedAssets) {
+            if (assetNames.includes(expectedAsset)) {
+              console.log(`✅ Found expected asset: ${expectedAsset}`);
+            } else {
+              console.log(`⚠️  Missing expected asset: ${expectedAsset}`);
+            }
+          }
+
+    - name: Test Docker image
+      run: |
+        VERSION="${{ needs.validate-release.outputs.version }}"
+        IMAGE="${{ env.REGISTRY }}/${{ env.IMAGE_NAME }}:$VERSION"
+        
+        echo "Testing Docker image: $IMAGE"
+        docker run --rm "$IMAGE" --version
+
+  # 通知和总结
+  notify-completion:
+    name: Notify Completion
+    runs-on: ubuntu-latest
+    needs: [validate-release, create-release, post-release-validation]
+    if: always()
+    steps:
+    - name: Generate summary
+      run: |
+        VERSION="${{ needs.validate-release.outputs.version }}"
+        
+        echo "## 🎉 Release $VERSION Completed" >> $GITHUB_STEP_SUMMARY
+        echo "" >> $GITHUB_STEP_SUMMARY
+        echo "### Results" >> $GITHUB_STEP_SUMMARY
+        echo "- **Version**: $VERSION" >> $GITHUB_STEP_SUMMARY
+        echo "- **Pre-release**: ${{ needs.validate-release.outputs.is-prerelease }}" >> $GITHUB_STEP_SUMMARY
+        echo "- **Validation**: ${{ needs.validate-release.result }}" >> $GITHUB_STEP_SUMMARY
+        echo "- **Release Creation**: ${{ needs.create-release.result }}" >> $GITHUB_STEP_SUMMARY
+        echo "- **Post-validation**: ${{ needs.post-release-validation.result }}" >> $GITHUB_STEP_SUMMARY
+        echo "" >> $GITHUB_STEP_SUMMARY
+        
+        if [ "${{ needs.create-release.result }}" = "success" ]; then
+          echo "### 🔗 Links" >> $GITHUB_STEP_SUMMARY
+          echo "- [GitHub Release](https://github.com/${{ github.repository }}/releases/tag/$VERSION)" >> $GITHUB_STEP_SUMMARY
+          echo "- [Docker Image](${{ env.REGISTRY }}/${{ env.IMAGE_NAME }}:$VERSION)" >> $GITHUB_STEP_SUMMARY
+          echo "" >> $GITHUB_STEP_SUMMARY
+          echo "### 📋 Next Steps" >> $GITHUB_STEP_SUMMARY
+          echo "1. Test the release binaries" >> $GITHUB_STEP_SUMMARY
+          echo "2. Update documentation if needed" >> $GITHUB_STEP_SUMMARY
+          echo "3. Announce the release" >> $GITHUB_STEP_SUMMARY
+        else
+          echo "### ❌ Release failed" >> $GITHUB_STEP_SUMMARY
+          echo "Please check the workflow logs for details." >> $GITHUB_STEP_SUMMARY
+        fi

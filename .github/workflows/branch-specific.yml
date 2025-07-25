@@ -1,0 +1,319 @@
+name: Branch Specific Workflows
+
+on:
+  push:
+    branches: [ main, develop, 'release/*', 'hotfix/*' ]
+  pull_request:
+    branches: [ main, develop ]
+
+permissions:
+  contents: read
+  pull-requests: write
+  checks: write
+
+env:
+  GO_VERSION: '1.21'
+
+jobs:
+  # Main分支特定检查
+  main-branch-checks:
+    name: Main Branch Checks
+    runs-on: ubuntu-latest
+    if: github.ref == 'refs/heads/main'
+    steps:
+    - name: Checkout code
+      uses: actions/checkout@v4
+      with:
+        fetch-depth: 0
+
+    - name: Verify version tag
+      run: |
+        # 检查最新提交是否有对应的版本标签
+        LATEST_TAG=$(git describe --tags --abbrev=0 2>/dev/null || echo "")
+        LATEST_COMMIT=$(git rev-parse HEAD)
+        TAG_COMMIT=$(git rev-list -n 1 $LATEST_TAG 2>/dev/null || echo "")
+        
+        if [[ "$LATEST_COMMIT" == "$TAG_COMMIT" ]]; then
+          echo "✅ Latest commit has version tag: $LATEST_TAG"
+        else
+          echo "⚠️  Latest commit does not have a version tag"
+          echo "This might be expected for hotfix merges"
+        fi
+
+    - name: Check changelog update
+      run: |
+        if [[ -f "docs/changelog.md" ]]; then
+          echo "✅ Changelog exists"
+          # 可以添加更多changelog格式检查
+        else
+          echo "❌ Changelog not found"
+          exit 1
+        fi
+
+  # Develop分支特定检查
+  develop-branch-checks:
+    name: Develop Branch Checks
+    runs-on: ubuntu-latest
+    if: github.ref == 'refs/heads/develop'
+    steps:
+    - name: Checkout code
+      uses: actions/checkout@v4
+
+    - name: Check for merge conflicts markers
+      run: |
+        if grep -r "<<<<<<< HEAD\|=======" --include="*.go" --include="*.md" --include="*.yml" .; then
+          echo "❌ Found merge conflict markers in files"
+          exit 1
+        else
+          echo "✅ No merge conflict markers found"
+        fi
+
+    - name: Validate go.mod
+      run: |
+        go mod tidy
+        if ! git diff --quiet go.mod go.sum; then
+          echo "❌ go.mod or go.sum needs to be updated"
+          git diff go.mod go.sum
+          exit 1
+        else
+          echo "✅ go.mod and go.sum are up to date"
+        fi
+
+  # Release分支特定检查
+  release-branch-checks:
+    name: Release Branch Checks
+    runs-on: ubuntu-latest
+    if: startsWith(github.ref, 'refs/heads/release/')
+    steps:
+    - name: Checkout code
+      uses: actions/checkout@v4
+
+    - name: Extract version from branch name
+      id: version
+      run: |
+        BRANCH_NAME=${GITHUB_REF#refs/heads/}
+        VERSION=${BRANCH_NAME#release/}
+        echo "version=$VERSION" >> $GITHUB_OUTPUT
+        echo "Detected version: $VERSION"
+
+    - name: Validate version format
+      run: |
+        VERSION="${{ steps.version.outputs.version }}"
+        if [[ ! "$VERSION" =~ ^v[0-9]+\.[0-9]+\.[0-9]+(-[a-z0-9]+(\.[0-9]+)?)?$ ]]; then
+          echo "❌ Invalid version format: $VERSION"
+          echo "Expected format: v1.2.3 or v1.2.3-beta.1"
+          exit 1
+        else
+          echo "✅ Valid version format: $VERSION"
+        fi
+
+    - name: Check version consistency
+      run: |
+        VERSION="${{ steps.version.outputs.version }}"
+        
+        # 检查README中的版本徽章
+        if grep -q "version-$VERSION" README.md; then
+          echo "✅ Version in README.md matches: $VERSION"
+        else
+          echo "❌ Version in README.md does not match: $VERSION"
+          exit 1
+        fi
+        
+        # 检查version.go文件
+        if [[ -f "internal/version/version.go" ]]; then
+          if grep -q "Version.*=.*\"$VERSION\"" internal/version/version.go; then
+            echo "✅ Version in version.go matches: $VERSION"
+          else
+            echo "❌ Version in version.go does not match: $VERSION"
+            exit 1
+          fi
+        fi
+
+    - name: Run release-specific tests
+      run: |
+        echo "Running release-specific test suite..."
+        go test -v -tags=release ./...
+
+    - name: Check documentation updates
+      run: |
+        VERSION="${{ steps.version.outputs.version }}"
+        
+        # 检查changelog是否包含新版本
+        if grep -q "$VERSION" docs/changelog.md; then
+          echo "✅ Changelog includes version $VERSION"
+        else
+          echo "❌ Changelog does not include version $VERSION"
+          exit 1
+        fi
+        
+        # 检查release notes
+        if [[ -f "docs/release-notes.md" ]]; then
+          if grep -q "$VERSION" docs/release-notes.md; then
+            echo "✅ Release notes include version $VERSION"
+          else
+            echo "⚠️  Release notes do not include version $VERSION"
+          fi
+        fi
+
+  # Hotfix分支特定检查
+  hotfix-branch-checks:
+    name: Hotfix Branch Checks
+    runs-on: ubuntu-latest
+    if: startsWith(github.ref, 'refs/heads/hotfix/')
+    steps:
+    - name: Checkout code
+      uses: actions/checkout@v4
+
+    - name: Fast security scan
+      run: |
+        echo "Running fast security scan for hotfix..."
+        go install github.com/securecodewarrior/gosec/v2/cmd/gosec@latest
+        gosec -quiet ./...
+
+    - name: Critical tests only
+      run: |
+        echo "Running critical tests for hotfix..."
+        # 只运行关键测试，跳过耗时的集成测试
+        go test -short -v ./...
+
+    - name: Validate hotfix scope
+      run: |
+        echo "Validating hotfix changes are minimal and focused..."
+        # 检查变更的文件数量
+        CHANGED_FILES=$(git diff --name-only origin/main...HEAD | wc -l)
+        if [[ $CHANGED_FILES -gt 10 ]]; then
+          echo "⚠️  Hotfix changes $CHANGED_FILES files, consider if this should be a regular release"
+        else
+          echo "✅ Hotfix changes $CHANGED_FILES files (reasonable scope)"
+        fi
+
+  # Pull Request特定检查
+  pr-checks:
+    name: Pull Request Checks
+    runs-on: ubuntu-latest
+    if: github.event_name == 'pull_request'
+    steps:
+    - name: Checkout code
+      uses: actions/checkout@v4
+      with:
+        fetch-depth: 0
+
+    - name: Check commit messages
+      run: |
+        echo "Checking commit messages in PR..."
+        COMMITS=$(git rev-list --no-merges ${{ github.event.pull_request.base.sha }}..${{ github.event.pull_request.head.sha }})
+        
+        for commit in $COMMITS; do
+          MESSAGE=$(git log --format=%s -n 1 $commit)
+          echo "Checking commit: $commit"
+          echo "Message: $MESSAGE"
+          
+          # 检查commit消息格式
+          if [[ "$MESSAGE" =~ ^(feat|fix|docs|style|refactor|test|chore|perf|ci)(\(.+\))?: .+ ]]; then
+            echo "✅ Commit message follows convention"
+          else
+            echo "❌ Commit message does not follow convention: $MESSAGE"
+            echo "Expected format: type(scope): description"
+            echo "Types: feat, fix, docs, style, refactor, test, chore, perf, ci"
+            exit 1
+          fi
+        done
+
+    - name: Check for breaking changes
+      run: |
+        echo "Checking for potential breaking changes..."
+        
+        # 检查是否有API变更
+        if git diff --name-only ${{ github.event.pull_request.base.sha }}..${{ github.event.pull_request.head.sha }} | grep -E "(cmd/|pkg/|internal/.*\.go)"; then
+          echo "⚠️  Code changes detected, please ensure backward compatibility"
+          
+          # 检查PR标题或描述是否提到breaking change
+          if echo "${{ github.event.pull_request.title }}" | grep -i "breaking\|break"; then
+            echo "🚨 Breaking change detected in PR title"
+          fi
+        fi
+
+    - name: Suggest reviewers
+      uses: actions/github-script@v6
+      with:
+        script: |
+          const { owner, repo, number } = context.issue;
+          const pr = await github.rest.pulls.get({ owner, repo, pull_request_number: number });
+          
+          // 根据变更的文件建议审查者
+          const files = await github.rest.pulls.listFiles({ owner, repo, pull_request_number: number });
+          
+          let suggestedReviewers = [];
+          
+          for (const file of files.data) {
+            if (file.filename.includes('security') || file.filename.includes('auth')) {
+              suggestedReviewers.push('security-team');
+            }
+            if (file.filename.includes('docs/')) {
+              suggestedReviewers.push('docs-team');
+            }
+            if (file.filename.includes('.github/workflows/')) {
+              suggestedReviewers.push('devops-team');
+            }
+          }
+          
+          if (suggestedReviewers.length > 0) {
+            const comment = `## 🤖 Suggested Reviewers\n\nBased on the files changed, consider requesting review from:\n${suggestedReviewers.map(r => `- @${r}`).join('\n')}`;
+            
+            await github.rest.issues.createComment({
+              owner,
+              repo,
+              issue_number: number,
+              body: comment
+            });
+          }
+
+  # 性能基准测试（仅在特定条件下运行）
+  benchmark-tests:
+    name: Benchmark Tests
+    runs-on: ubuntu-latest
+    if: contains(github.event.pull_request.labels.*.name, 'performance') || github.ref == 'refs/heads/main'
+    steps:
+    - name: Checkout code
+      uses: actions/checkout@v4
+
+    - name: Set up Go
+      uses: actions/setup-go@v4
+      with:
+        go-version: ${{ env.GO_VERSION }}
+
+    - name: Run benchmarks
+      run: |
+        echo "Running performance benchmarks..."
+        go test -bench=. -benchmem ./... | tee benchmark-results.txt
+
+    - name: Upload benchmark results
+      uses: actions/upload-artifact@v3
+      with:
+        name: benchmark-results
+        path: benchmark-results.txt
+
+  # 依赖更新检查
+  dependency-updates:
+    name: Dependency Updates
+    runs-on: ubuntu-latest
+    if: github.event_name == 'schedule' || contains(github.event.pull_request.labels.*.name, 'dependencies')
+    steps:
+    - name: Checkout code
+      uses: actions/checkout@v4
+
+    - name: Set up Go
+      uses: actions/setup-go@v4
+      with:
+        go-version: ${{ env.GO_VERSION }}
+
+    - name: Check for outdated dependencies
+      run: |
+        echo "Checking for outdated dependencies..."
+        go list -u -m all | grep -E '\[.*\]' || echo "All dependencies are up to date"
+
+    - name: Security audit
+      run: |
+        echo "Running security audit..."
+        go install golang.org/x/vuln/cmd/govulncheck@latest
+        govulncheck ./...

@@ -1,0 +1,148 @@
+version: '3.8'
+
+services:
+  # Harpoon应用
+  harpoon:
+    build:
+      context: .
+      dockerfile: Dockerfile
+      args:
+        VERSION: ${VERSION:-dev}
+        COMMIT: ${COMMIT:-local}
+        BUILD_DATE: ${BUILD_DATE:-$(date -u +"%Y-%m-%dT%H:%M:%SZ")}
+    container_name: harpoon-dev
+    ports:
+      - "8080:8080"
+    environment:
+      - HPN_LOG_LEVEL=debug
+      - HPN_HTTP_PORT=8080
+      - HPN_CONFIG_FILE=/app/config.yaml
+    volumes:
+      - ./config.yaml.example:/app/config.yaml:ro
+      - ./data:/app/data
+      - ./logs:/app/logs
+      - /var/run/docker.sock:/var/run/docker.sock:ro
+    networks:
+      - harpoon-network
+    restart: unless-stopped
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:8080/health"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+      start_period: 40s
+
+  # Redis (用于缓存和会话存储)
+  redis:
+    image: redis:7-alpine
+    container_name: harpoon-redis
+    ports:
+      - "6379:6379"
+    volumes:
+      - redis-data:/data
+    networks:
+      - harpoon-network
+    restart: unless-stopped
+    command: redis-server --appendonly yes
+    healthcheck:
+      test: ["CMD", "redis-cli", "ping"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+
+  # PostgreSQL (用于持久化存储)
+  postgres:
+    image: postgres:15-alpine
+    container_name: harpoon-postgres
+    ports:
+      - "5432:5432"
+    environment:
+      - POSTGRES_DB=harpoon
+      - POSTGRES_USER=harpoon
+      - POSTGRES_PASSWORD=harpoon_dev_password
+    volumes:
+      - postgres-data:/var/lib/postgresql/data
+      - ./scripts/init-db.sql:/docker-entrypoint-initdb.d/init-db.sql:ro
+    networks:
+      - harpoon-network
+    restart: unless-stopped
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U harpoon -d harpoon"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+
+  # Prometheus (监控)
+  prometheus:
+    image: prom/prometheus:latest
+    container_name: harpoon-prometheus
+    ports:
+      - "9090:9090"
+    volumes:
+      - ./monitoring/prometheus.yml:/etc/prometheus/prometheus.yml:ro
+      - prometheus-data:/prometheus
+    networks:
+      - harpoon-network
+    restart: unless-stopped
+    command:
+      - '--config.file=/etc/prometheus/prometheus.yml'
+      - '--storage.tsdb.path=/prometheus'
+      - '--web.console.libraries=/etc/prometheus/console_libraries'
+      - '--web.console.templates=/etc/prometheus/consoles'
+      - '--storage.tsdb.retention.time=200h'
+      - '--web.enable-lifecycle'
+
+  # Grafana (可视化)
+  grafana:
+    image: grafana/grafana:latest
+    container_name: harpoon-grafana
+    ports:
+      - "3000:3000"
+    environment:
+      - GF_SECURITY_ADMIN_PASSWORD=admin
+      - GF_USERS_ALLOW_SIGN_UP=false
+    volumes:
+      - grafana-data:/var/lib/grafana
+      - ./monitoring/grafana/dashboards:/etc/grafana/provisioning/dashboards:ro
+      - ./monitoring/grafana/datasources:/etc/grafana/provisioning/datasources:ro
+    networks:
+      - harpoon-network
+    restart: unless-stopped
+    depends_on:
+      - prometheus
+
+  # Jaeger (分布式追踪)
+  jaeger:
+    image: jaegertracing/all-in-one:latest
+    container_name: harpoon-jaeger
+    ports:
+      - "16686:16686"
+      - "14268:14268"
+    environment:
+      - COLLECTOR_OTLP_ENABLED=true
+    networks:
+      - harpoon-network
+    restart: unless-stopped
+
+  # 本地Docker Registry (用于测试)
+  registry:
+    image: registry:2
+    container_name: harpoon-registry
+    ports:
+      - "5000:5000"
+    volumes:
+      - registry-data:/var/lib/registry
+    networks:
+      - harpoon-network
+    restart: unless-stopped
+
+networks:
+  harpoon-network:
+    driver: bridge
+
+volumes:
+  redis-data:
+  postgres-data:
+  prometheus-data:
+  grafana-data:
+  registry-data:

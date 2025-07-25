@@ -6,20 +6,22 @@ import (
 	"fmt"
 	"os"
 	"path/filepath"
-	"runtime"
 	"strings"
 	"time"
 
 	"github.com/spf13/cobra"
 	"github.com/harpoon/hpn/internal/config"
 	containerruntime "github.com/harpoon/hpn/internal/runtime"
+	"github.com/harpoon/hpn/internal/version"
 	"github.com/harpoon/hpn/pkg/types"
 )
 
+// Legacy variables for backward compatibility
+// These are now managed by the version package
 var (
-	version = "v1.1"
-	commit  = "dev"
-	date    = "unknown"
+	legacyVersion = version.GetVersion()
+	legacyCommit  = version.GetShortCommit()
+	legacyDate    = version.BuildDate
 )
 
 // Command line flags matching images.sh
@@ -47,7 +49,7 @@ var rootCmd = &cobra.Command{
 	Use:   "hpn",
 	Short: "Manage container images (pull/save/load/push) with flexible modes",
 	Long:  `Manage container images (pull/save/load/push) with flexible modes`,
-	Version:       getVersionString(),
+	Version:       version.GetFullVersion(),
 	RunE:          runCommand,
 	SilenceUsage:  true, // Don't show usage on errors
 	SilenceErrors: true, // Don't let Cobra print errors automatically
@@ -59,7 +61,7 @@ var versionCmd = &cobra.Command{
 	Short: "Show version information",
 	Long:  "Display detailed version information including build details",
 	Run: func(cmd *cobra.Command, args []string) {
-		fmt.Println(getDetailedVersionString())
+		version.PrintDetailedVersion()
 	},
 }
 
@@ -789,26 +791,9 @@ func parseImageNameAndTag(image string) (string, string) {
 	}
 	
 	return lastPart, "latest"
-}// getVer
-// getVersionString returns formatted version information for cobra
-func getVersionString() string {
-	return fmt.Sprintf("%s (commit: %s, built: %s)", version, commit, date)
 }
 
-// printVersionInfo prints detailed version information consistently
+// printVersionInfo prints version information (legacy function)
 func printVersionInfo() {
-	fmt.Printf("Harpoon (hpn) %s\n", version)
-	fmt.Printf("Commit: %s\n", commit)
-	fmt.Printf("Built: %s\n", date)
-	fmt.Printf("Go version: %s\n", runtime.Version())
-	fmt.Printf("Platform: %s/%s\n", runtime.GOOS, runtime.GOARCH)
-}
-
-// getDetailedVersionString returns detailed version information as string
-func getDetailedVersionString() string {
-	return fmt.Sprintf(`Harpoon (hpn) %s
-Commit: %s
-Built: %s
-Go version: %s
-Platform: %s/%s`, version, commit, date, runtime.Version(), runtime.GOOS, runtime.GOARCH)
+	version.PrintVersion()
 }
