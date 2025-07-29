@@ -74,9 +74,15 @@ detect_platform() {
 
 # Download and install
 install_hpn() {
-    local download_url="https://github.com/${REPO}/releases/download/${VERSION}/hpn-${VERSION}-${PLATFORM}.tar.gz"
+    local download_url="https://github.com/${REPO}/releases/download/${VERSION}/hpn-${PLATFORM}"
+    if [ "$OS" = "windows" ]; then
+        download_url="${download_url}.exe"
+    fi
     local temp_dir=$(mktemp -d)
-    local temp_file="${temp_dir}/hpn.tar.gz"
+    local temp_file="${temp_dir}/hpn"
+    if [ "$OS" = "windows" ]; then
+        temp_file="${temp_file}.exe"
+    fi
     
     log_info "Downloading hpn ${VERSION} for ${PLATFORM}..."
     log_info "URL: $download_url"
@@ -95,10 +101,7 @@ install_hpn() {
         exit 1
     fi
     
-    log_info "Extracting archive..."
-    tar -xzf "$temp_file" -C "$temp_dir"
-    
-    local binary_path="${temp_dir}/hpn-${PLATFORM}"
+    local binary_path="$temp_file"
     if [ ! -f "$binary_path" ]; then
         log_error "Binary not found in archive"
         exit 1
