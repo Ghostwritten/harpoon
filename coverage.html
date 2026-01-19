@@ -1,0 +1,2408 @@
+
+<!DOCTYPE html>
+<html>
+	<head>
+		<meta http-equiv="Content-Type" content="text/html; charset=utf-8">
+		<title>hpn: Go Coverage Report</title>
+		<style>
+			body {
+				background: black;
+				color: rgb(80, 80, 80);
+			}
+			body, pre, #legend span {
+				font-family: Menlo, monospace;
+				font-weight: bold;
+			}
+			#topbar {
+				background: black;
+				position: fixed;
+				top: 0; left: 0; right: 0;
+				height: 42px;
+				border-bottom: 1px solid rgb(80, 80, 80);
+			}
+			#content {
+				margin-top: 50px;
+			}
+			#nav, #legend {
+				float: left;
+				margin-left: 10px;
+			}
+			#legend {
+				margin-top: 12px;
+			}
+			#nav {
+				margin-top: 10px;
+			}
+			#legend span {
+				margin: 0 5px;
+			}
+			.cov0 { color: rgb(192, 0, 0) }
+.cov1 { color: rgb(128, 128, 128) }
+.cov2 { color: rgb(116, 140, 131) }
+.cov3 { color: rgb(104, 152, 134) }
+.cov4 { color: rgb(92, 164, 137) }
+.cov5 { color: rgb(80, 176, 140) }
+.cov6 { color: rgb(68, 188, 143) }
+.cov7 { color: rgb(56, 200, 146) }
+.cov8 { color: rgb(44, 212, 149) }
+.cov9 { color: rgb(32, 224, 152) }
+.cov10 { color: rgb(20, 236, 155) }
+
+		</style>
+	</head>
+	<body>
+		<div id="topbar">
+			<div id="nav">
+				<select id="files">
+				
+				<option value="file0">github.com/harpoon/hpn/cmd/hpn/main.go (0.0%)</option>
+				
+				<option value="file1">github.com/harpoon/hpn/cmd/hpn/root.go (0.0%)</option>
+				
+				<option value="file2">github.com/harpoon/hpn/internal/config/config.go (0.0%)</option>
+				
+				<option value="file3">github.com/harpoon/hpn/internal/config/validation.go (0.0%)</option>
+				
+				<option value="file4">github.com/harpoon/hpn/internal/logger/interface.go (0.0%)</option>
+				
+				<option value="file5">github.com/harpoon/hpn/internal/runtime/detector.go (0.0%)</option>
+				
+				<option value="file6">github.com/harpoon/hpn/internal/runtime/docker.go (0.0%)</option>
+				
+				<option value="file7">github.com/harpoon/hpn/internal/runtime/nerdctl.go (0.0%)</option>
+				
+				<option value="file8">github.com/harpoon/hpn/internal/runtime/podman.go (0.0%)</option>
+				
+				<option value="file9">github.com/harpoon/hpn/internal/version/version.go (0.0%)</option>
+				
+				<option value="file10">github.com/harpoon/hpn/pkg/errors/errors.go (0.0%)</option>
+				
+				<option value="file11">github.com/harpoon/hpn/pkg/types/config.go (0.0%)</option>
+				
+				<option value="file12">github.com/harpoon/hpn/pkg/types/image.go (0.0%)</option>
+				
+				</select>
+			</div>
+			<div id="legend">
+				<span>not tracked</span>
+			
+				<span class="cov0">not covered</span>
+				<span class="cov8">covered</span>
+			
+			</div>
+		</div>
+		<div id="content">
+		
+		<pre class="file" id="file0" style="display: none">package main
+
+import (
+        "fmt"
+        "os"
+)
+
+func main() <span class="cov0" title="0">{
+        if err := rootCmd.Execute(); err != nil </span><span class="cov0" title="0">{
+                fmt.Fprintf(os.Stderr, "Error: %v\n", err)
+                os.Exit(1)
+        }</span>
+}</pre>
+		
+		<pre class="file" id="file1" style="display: none">package main
+
+import (
+        "bufio"
+        "context"
+        "fmt"
+        "os"
+        "path/filepath"
+        "strings"
+        "time"
+
+        "github.com/spf13/cobra"
+        "github.com/harpoon/hpn/internal/config"
+        containerruntime "github.com/harpoon/hpn/internal/runtime"
+        "github.com/harpoon/hpn/internal/version"
+        "github.com/harpoon/hpn/pkg/types"
+)
+
+// Legacy variables for backward compatibility
+// These are now managed by the version package
+var (
+        legacyVersion = version.GetVersion()
+        legacyCommit  = version.GetShortCommit()
+        legacyDate    = version.BuildDate
+)
+
+// Command line flags matching images.sh
+var (
+        action       string
+        imageFile    string
+        registry     string
+        project      string
+        pushMode     int
+        loadMode     int
+        saveMode     int
+        configFile   string
+        runtimeName  string
+        autoFallback bool
+)
+
+// Global configuration
+var (
+        cfg             *types.Config
+        configMgr       *config.Manager
+        runtimeDetector *containerruntime.Detector
+)
+
+var rootCmd = &amp;cobra.Command{
+        Use:   "hpn",
+        Short: "Manage container images (pull/save/load/push) with flexible modes",
+        Long:  `Manage container images (pull/save/load/push) with flexible modes`,
+        Version:       version.GetFullVersion(),
+        RunE:          runCommand,
+        SilenceUsage:  true, // Don't show usage on errors
+        SilenceErrors: true, // Don't let Cobra print errors automatically
+}
+
+// Version command
+var versionCmd = &amp;cobra.Command{
+        Use:   "version",
+        Short: "Show version information",
+        Long:  "Display detailed version information including build details",
+        Run: func(cmd *cobra.Command, args []string) <span class="cov0" title="0">{
+                version.PrintDetailedVersion()
+        }</span>,
+}
+
+func init() <span class="cov0" title="0">{
+        // Initialize configuration manager
+        configMgr = config.NewManager()
+        
+        // Initialize runtime detector
+        runtimeDetector = containerruntime.NewDetector()
+        
+        // Required flags matching images.sh interface
+        rootCmd.Flags().StringVarP(&amp;action, "action", "a", "", "Action (required): pull | save | load | push")
+        rootCmd.Flags().StringVarP(&amp;imageFile, "file", "f", "", "Image list file (required for pull/save/push)")
+        rootCmd.Flags().StringVarP(&amp;registry, "registry", "r", "", "Target registry")
+        rootCmd.Flags().StringVarP(&amp;project, "project", "p", "", "Target project namespace")
+        
+        // Mode flags
+        rootCmd.Flags().IntVar(&amp;pushMode, "push-mode", 0, "Push mode (1|2|3)")
+        rootCmd.Flags().IntVar(&amp;loadMode, "load-mode", 0, "Load mode (1|2|3)")
+        rootCmd.Flags().IntVar(&amp;saveMode, "save-mode", 0, "Save mode (1|2|3)")
+        
+        // Configuration flag
+        rootCmd.Flags().StringVarP(&amp;configFile, "config", "c", "", "Config file (default is $HOME/.hpn/config.yaml)")
+        
+        // Runtime flags
+        rootCmd.Flags().StringVar(&amp;runtimeName, "runtime", "", "Container runtime to use (docker|podman|nerdctl)")
+        rootCmd.Flags().BoolVar(&amp;autoFallback, "auto-fallback", false, "Automatically fallback to available runtime")
+        
+        // Version flags (in addition to --version)
+        rootCmd.Flags().BoolP("version", "v", false, "Show version information")
+        rootCmd.Flags().BoolP("Version", "V", false, "Show version information")
+        
+        // Add version subcommand
+        rootCmd.AddCommand(versionCmd)
+        
+        // Custom usage template matching images.sh
+        rootCmd.SetUsageTemplate(usageTemplate)
+}</span>
+
+const usageTemplate = `Usage: {{.UseLine}} -a &lt;action&gt; -f &lt;file&gt; [options]
+
+Actions:
+  pull    Pull images from registry
+  save    Save images to tar files  
+  load    Load images from tar files
+  push    Push images to registry
+
+Options:
+  -a, --action     Action: pull | save | load | push
+  -f, --file       Image list file
+  -r, --registry   Target registry
+  -p, --project    Target project namespace
+  -c, --config     Config file path
+      --runtime    Container runtime: docker | podman | nerdctl
+      --auto-fallback  Auto fallback to available runtime
+  -v, --version    Show version
+  -h, --help       Show help
+
+Modes:
+  --push-mode      1=registry/image:tag  2=registry/project/image:tag
+  --save-mode      1=current dir  2=./images/  3=./images/&lt;project&gt;/
+  --load-mode      1=current dir  2=./images/  3=recursive ./images/*/
+
+Examples:
+  hpn -a pull -f images.txt
+  hpn -a save -f images.txt --save-mode 2
+  hpn -a push -f images.txt -r harbor.com -p prod --push-mode 2
+  hpn --runtime podman -a pull -f images.txt
+`
+
+func runCommand(cmd *cobra.Command, args []string) error <span class="cov0" title="0">{
+        // Check for version flags first
+        if versionFlag, _ := cmd.Flags().GetBool("version"); versionFlag </span><span class="cov0" title="0">{
+                printVersionInfo()
+                return nil
+        }</span>
+        <span class="cov0" title="0">if versionFlag, _ := cmd.Flags().GetBool("Version"); versionFlag </span><span class="cov0" title="0">{
+                printVersionInfo()
+                return nil
+        }</span>
+        
+        // Load configuration
+        <span class="cov0" title="0">var err error
+        cfg, err = configMgr.Load(configFile)
+        if err != nil </span><span class="cov0" title="0">{
+                return fmt.Errorf("failed to load configuration: %v", err)
+        }</span>
+        
+        // Apply configuration defaults if flags are not set
+        <span class="cov0" title="0">if registry == "" </span><span class="cov0" title="0">{
+                registry = cfg.Registry
+        }</span>
+        <span class="cov0" title="0">if project == "" </span><span class="cov0" title="0">{
+                project = cfg.Project
+        }</span>
+        <span class="cov0" title="0">if pushMode == 0 </span><span class="cov0" title="0">{
+                pushMode = int(cfg.Modes.PushMode)
+        }</span>
+        <span class="cov0" title="0">if loadMode == 0 </span><span class="cov0" title="0">{
+                loadMode = int(cfg.Modes.LoadMode)
+        }</span>
+        <span class="cov0" title="0">if saveMode == 0 </span><span class="cov0" title="0">{
+                saveMode = int(cfg.Modes.SaveMode)
+        }</span>
+        
+        // Validate action (skip if empty, as it might be a version-only call)
+        <span class="cov0" title="0">if action != "" </span><span class="cov0" title="0">{
+                validActions := []string{"pull", "save", "load", "push"}
+                actionValid := false
+                for _, validAction := range validActions </span><span class="cov0" title="0">{
+                        if action == validAction </span><span class="cov0" title="0">{
+                                actionValid = true
+                                break</span>
+                        }
+                }
+                
+                <span class="cov0" title="0">if !actionValid </span><span class="cov0" title="0">{
+                        return fmt.Errorf("invalid action '%s'. Valid actions: %s", action, strings.Join(validActions, ", "))
+                }</span>
+        } else<span class="cov0" title="0"> {
+                // If no action provided and no version flags, show error
+                return fmt.Errorf("missing required -a &lt;action&gt; parameter. Use -h for help or -v for version")
+        }</span>
+        
+        // Validate file parameter for actions that require it
+        <span class="cov0" title="0">if action != "load" &amp;&amp; imageFile == "" </span><span class="cov0" title="0">{
+                return fmt.Errorf("missing required -f &lt;image_list&gt; parameter for action '%s'", action)
+        }</span>
+        
+        // Validate mode compatibility with action
+        <span class="cov0" title="0">switch action </span>{
+        case "push":<span class="cov0" title="0">
+                // Check for incompatible modes
+                if cmd.Flags().Changed("save-mode") </span><span class="cov0" title="0">{
+                        return fmt.Errorf("--save-mode cannot be used with push action")
+                }</span>
+                <span class="cov0" title="0">if cmd.Flags().Changed("load-mode") </span><span class="cov0" title="0">{
+                        return fmt.Errorf("--load-mode cannot be used with push action")
+                }</span>
+                // Validate push mode range
+                <span class="cov0" title="0">if pushMode &lt; 1 || pushMode &gt; 2 </span><span class="cov0" title="0">{
+                        return fmt.Errorf("invalid push-mode '%d'. Valid values: 1, 2", pushMode)
+                }</span>
+        case "save":<span class="cov0" title="0">
+                // Check for incompatible modes
+                if cmd.Flags().Changed("push-mode") </span><span class="cov0" title="0">{
+                        return fmt.Errorf("--push-mode cannot be used with save action")
+                }</span>
+                <span class="cov0" title="0">if cmd.Flags().Changed("load-mode") </span><span class="cov0" title="0">{
+                        return fmt.Errorf("--load-mode cannot be used with save action")
+                }</span>
+                // Validate save mode range
+                <span class="cov0" title="0">if saveMode &lt; 1 || saveMode &gt; 3 </span><span class="cov0" title="0">{
+                        return fmt.Errorf("invalid save-mode '%d'. Valid values: 1, 2, 3", saveMode)
+                }</span>
+        case "load":<span class="cov0" title="0">
+                // Check for incompatible modes
+                if cmd.Flags().Changed("push-mode") </span><span class="cov0" title="0">{
+                        return fmt.Errorf("--push-mode cannot be used with load action")
+                }</span>
+                <span class="cov0" title="0">if cmd.Flags().Changed("save-mode") </span><span class="cov0" title="0">{
+                        return fmt.Errorf("--save-mode cannot be used with load action")
+                }</span>
+                // Validate load mode range
+                <span class="cov0" title="0">if loadMode &lt; 1 || loadMode &gt; 3 </span><span class="cov0" title="0">{
+                        return fmt.Errorf("invalid load-mode '%d'. Valid values: 1, 2, 3", loadMode)
+                }</span>
+        case "pull":<span class="cov0" title="0">
+                // Pull doesn't use any modes, check for incompatible modes
+                if cmd.Flags().Changed("push-mode") </span><span class="cov0" title="0">{
+                        return fmt.Errorf("--push-mode cannot be used with pull action")
+                }</span>
+                <span class="cov0" title="0">if cmd.Flags().Changed("save-mode") </span><span class="cov0" title="0">{
+                        return fmt.Errorf("--save-mode cannot be used with pull action")
+                }</span>
+                <span class="cov0" title="0">if cmd.Flags().Changed("load-mode") </span><span class="cov0" title="0">{
+                        return fmt.Errorf("--load-mode cannot be used with pull action")
+                }</span>
+        }
+        
+        // Smart push mode adjustment: if user specifies project but uses default push mode 1,
+        // automatically switch to push mode 2 to include the project
+        <span class="cov0" title="0">if action == "push" &amp;&amp; pushMode == 1 &amp;&amp; project != "" </span><span class="cov0" title="0">{
+                // Check if project was explicitly specified by user (not just from config default)
+                projectExplicitlySet := cmd.Flags().Changed("project") || 
+                        (cfg != nil &amp;&amp; cfg.Project != project) // project differs from config default
+                
+                if projectExplicitlySet </span><span class="cov0" title="0">{
+                        pushMode = 2
+                        fmt.Printf("Auto-adjusted to push mode 2 for project '%s'\n", project)
+                }</span>
+        }
+        
+        // Execute the action
+        <span class="cov0" title="0">switch action </span>{
+        case "pull":<span class="cov0" title="0">
+                return executePull()</span>
+        case "save":<span class="cov0" title="0">
+                return executeSave()</span>
+        case "load":<span class="cov0" title="0">
+                return executeLoad()</span>
+        case "push":<span class="cov0" title="0">
+                return executePush(cmd)</span>
+        default:<span class="cov0" title="0">
+                return fmt.Errorf("unknown action: %s", action)</span>
+        }
+}
+
+func executePull() error <span class="cov0" title="0">{
+        fmt.Printf("Executing pull action with file: %s\n", imageFile)
+        
+        // Select container runtime
+        selectedRuntime, err := selectContainerRuntime()
+        if err != nil </span><span class="cov0" title="0">{
+                return fmt.Errorf("container runtime selection failed: %v", err)
+        }</span>
+        
+        <span class="cov0" title="0">fmt.Printf("Using container runtime: %s\n", selectedRuntime.Name())
+        
+        // Read image list from file
+        images, err := readImageList(imageFile)
+        if err != nil </span><span class="cov0" title="0">{
+                return fmt.Errorf("failed to read image list: %v", err)
+        }</span>
+        
+        <span class="cov0" title="0">fmt.Printf("Found %d images to pull\n", len(images))
+        
+        // Pull each image
+        successCount := 0
+        failedImages := []string{}
+        
+        for i, image := range images </span><span class="cov0" title="0">{
+                fmt.Printf("[%d/%d] Pulling %s...\n", i+1, len(images), image)
+                
+                ctx, cancel := context.WithTimeout(context.Background(), 5*time.Minute)
+                pullOptions := containerruntime.PullOptions{
+                        Timeout: 5 * time.Minute,
+                }
+                
+                if err := selectedRuntime.Pull(ctx, image, pullOptions); err != nil </span><span class="cov0" title="0">{
+                        fmt.Printf("❌ Failed to pull %s: %v\n", image, err)
+                        failedImages = append(failedImages, image)
+                }</span> else<span class="cov0" title="0"> {
+                        fmt.Printf("✅ Successfully pulled %s\n", image)
+                        successCount++
+                }</span>
+                <span class="cov0" title="0">cancel()</span>
+        }
+        
+        // Print summary
+        <span class="cov0" title="0">fmt.Printf("\nSummary: %d successful, %d failed\n", successCount, len(failedImages))
+        
+        if len(failedImages) &gt; 0 </span><span class="cov0" title="0">{
+                fmt.Printf("\nFailed images:\n")
+                for _, img := range failedImages </span><span class="cov0" title="0">{
+                        fmt.Printf("  - %s\n", img)
+                }</span>
+                <span class="cov0" title="0">return fmt.Errorf("failed to pull %d images", len(failedImages))</span>
+        }
+        
+        <span class="cov0" title="0">return nil</span>
+}
+
+func executeSave() error <span class="cov0" title="0">{
+        fmt.Printf("Executing save action with file: %s, mode: %d\n", imageFile, saveMode)
+        
+        // Select container runtime
+        selectedRuntime, err := selectContainerRuntime()
+        if err != nil </span><span class="cov0" title="0">{
+                return fmt.Errorf("container runtime selection failed: %v", err)
+        }</span>
+        
+        <span class="cov0" title="0">fmt.Printf("Using container runtime: %s\n", selectedRuntime.Name())
+        
+        // Read image list from file
+        images, err := readImageList(imageFile)
+        if err != nil </span><span class="cov0" title="0">{
+                return fmt.Errorf("failed to read image list: %v", err)
+        }</span>
+        
+        <span class="cov0" title="0">fmt.Printf("Found %d images to save\n", len(images))
+        
+        // Determine save directory based on mode
+        var saveDir string
+        switch saveMode </span>{
+        case 1:<span class="cov0" title="0">
+                saveDir = "."</span> // Current directory
+        case 2:<span class="cov0" title="0">
+                saveDir = "./images"
+                if err := os.MkdirAll(saveDir, 0755); err != nil </span><span class="cov0" title="0">{
+                        return fmt.Errorf("failed to create images directory: %v", err)
+                }</span>
+        case 3:<span class="cov0" title="0">
+                // Will create project-specific directories as needed
+                saveDir = "./images"
+                if err := os.MkdirAll(saveDir, 0755); err != nil </span><span class="cov0" title="0">{
+                        return fmt.Errorf("failed to create images directory: %v", err)
+                }</span>
+        }
+        
+        <span class="cov0" title="0">fmt.Printf("Save mode %d: saving to %s\n", saveMode, saveDir)
+        
+        // Save each image
+        successCount := 0
+        failedImages := []string{}
+        
+        for i, image := range images </span><span class="cov0" title="0">{
+                fmt.Printf("[%d/%d] Saving %s...\n", i+1, len(images), image)
+                
+                if err := saveImage(selectedRuntime, image, saveDir, saveMode); err != nil </span><span class="cov0" title="0">{
+                        fmt.Printf("❌ Failed to save %s: %v\n", image, err)
+                        failedImages = append(failedImages, image)
+                }</span> else<span class="cov0" title="0"> {
+                        fmt.Printf("✅ Successfully saved %s\n", image)
+                        successCount++
+                }</span>
+        }
+        
+        // Print summary
+        <span class="cov0" title="0">fmt.Printf("\nSummary: %d successful, %d failed\n", successCount, len(failedImages))
+        
+        if len(failedImages) &gt; 0 </span><span class="cov0" title="0">{
+                fmt.Printf("\nFailed images:\n")
+                for _, img := range failedImages </span><span class="cov0" title="0">{
+                        fmt.Printf("  - %s\n", img)
+                }</span>
+                <span class="cov0" title="0">return fmt.Errorf("failed to save %d images", len(failedImages))</span>
+        }
+        
+        <span class="cov0" title="0">return nil</span>
+}
+
+func executeLoad() error <span class="cov0" title="0">{
+        fmt.Printf("Executing load action with mode: %d\n", loadMode)
+        
+        // Select container runtime
+        selectedRuntime, err := selectContainerRuntime()
+        if err != nil </span><span class="cov0" title="0">{
+                return fmt.Errorf("container runtime selection failed: %v", err)
+        }</span>
+        
+        <span class="cov0" title="0">fmt.Printf("Using container runtime: %s\n", selectedRuntime.Name())
+        
+        // Determine load directory based on mode
+        var loadDir string
+        var tarFiles []string
+        
+        switch loadMode </span>{
+        case 1:<span class="cov0" title="0">
+                // Load from current directory
+                loadDir = "."
+                files, err := findTarFiles(loadDir, false)
+                if err != nil </span><span class="cov0" title="0">{
+                        return fmt.Errorf("failed to find tar files in current directory: %v", err)
+                }</span>
+                <span class="cov0" title="0">tarFiles = files</span>
+        case 2:<span class="cov0" title="0">
+                // Load from ./images/ directory
+                loadDir = "./images"
+                files, err := findTarFiles(loadDir, false)
+                if err != nil </span><span class="cov0" title="0">{
+                        return fmt.Errorf("failed to find tar files in images directory: %v", err)
+                }</span>
+                <span class="cov0" title="0">tarFiles = files</span>
+        case 3:<span class="cov0" title="0">
+                // Recursively load from ./images/*/ subdirectories
+                loadDir = "./images"
+                files, err := findTarFiles(loadDir, true)
+                if err != nil </span><span class="cov0" title="0">{
+                        return fmt.Errorf("failed to find tar files recursively: %v", err)
+                }</span>
+                <span class="cov0" title="0">tarFiles = files</span>
+        }
+        
+        <span class="cov0" title="0">fmt.Printf("Found %d tar files to load\n", len(tarFiles))
+        
+        // Load each tar file
+        successCount := 0
+        failedFiles := []string{}
+        
+        for i, tarFile := range tarFiles </span><span class="cov0" title="0">{
+                fmt.Printf("[%d/%d] Loading %s...\n", i+1, len(tarFiles), tarFile)
+                
+                if err := loadImage(selectedRuntime, tarFile); err != nil </span><span class="cov0" title="0">{
+                        fmt.Printf("❌ Failed to load %s: %v\n", tarFile, err)
+                        failedFiles = append(failedFiles, tarFile)
+                }</span> else<span class="cov0" title="0"> {
+                        fmt.Printf("✅ Successfully loaded %s\n", tarFile)
+                        successCount++
+                }</span>
+        }
+        
+        // Print summary
+        <span class="cov0" title="0">fmt.Printf("\nSummary: %d successful, %d failed\n", successCount, len(failedFiles))
+        
+        if len(failedFiles) &gt; 0 </span><span class="cov0" title="0">{
+                fmt.Printf("\nFailed files:\n")
+                for _, file := range failedFiles </span><span class="cov0" title="0">{
+                        fmt.Printf("  - %s\n", file)
+                }</span>
+                <span class="cov0" title="0">return fmt.Errorf("failed to load %d files", len(failedFiles))</span>
+        }
+        
+        <span class="cov0" title="0">return nil</span>
+}
+
+func executePush(cmd *cobra.Command) error <span class="cov0" title="0">{
+        fmt.Printf("Executing push action with file: %s, mode: %d, registry: %s, project: %s\n", 
+                imageFile, pushMode, registry, project)
+        
+        // Detect container runtime
+        selectedRuntime, err := selectContainerRuntime()
+        if err != nil </span><span class="cov0" title="0">{
+                return fmt.Errorf("container runtime selection failed: %v", err)
+        }</span>
+        
+        <span class="cov0" title="0">fmt.Printf("Using container runtime: %s\n", selectedRuntime.Name())
+        
+        // Read image list from file
+        images, err := readImageList(imageFile)
+        if err != nil </span><span class="cov0" title="0">{
+                return fmt.Errorf("failed to read image list: %v", err)
+        }</span>
+        
+        <span class="cov0" title="0">fmt.Printf("Found %d images to push\n", len(images))
+        fmt.Printf("Target registry: %s\n", registry)
+        fmt.Printf("Target project: %s\n", project)
+        fmt.Printf("Push mode: %d\n", pushMode)
+        
+        // Push each image
+        successCount := 0
+        failedImages := []string{}
+        
+        for i, image := range images </span><span class="cov0" title="0">{
+                fmt.Printf("[%d/%d] Pushing %s...\n", i+1, len(images), image)
+                
+                // Determine project name for this specific image based on push mode
+                var effectiveProject string
+                if pushMode == 2 </span><span class="cov0" title="0">{
+                        // For mode 2, use smart project selection
+                        if cmd.Flags().Changed("project") </span><span class="cov0" title="0">{
+                                // User explicitly specified project via command line
+                                effectiveProject = project
+                        }</span> else<span class="cov0" title="0"> if cfg != nil &amp;&amp; cfg.Project != "" &amp;&amp; cfg.Project != "library" </span><span class="cov0" title="0">{
+                                // Use config file project (if not default "library")
+                                effectiveProject = cfg.Project
+                        }</span> else<span class="cov0" title="0"> {
+                                // Use original image project name
+                                effectiveProject = extractProjectFromImage(image)
+                        }</span>
+                } else<span class="cov0" title="0"> {
+                        // For mode 1, use the project as-is (though it won't be used)
+                        effectiveProject = project
+                }</span>
+                
+                <span class="cov0" title="0">if err := pushImage(selectedRuntime, image, registry, effectiveProject, pushMode); err != nil </span><span class="cov0" title="0">{
+                        fmt.Printf("❌ Failed to push %s: %v\n", image, err)
+                        failedImages = append(failedImages, image)
+                }</span> else<span class="cov0" title="0"> {
+                        fmt.Printf("✅ Successfully pushed %s\n", image)
+                        successCount++
+                }</span>
+        }
+        
+        // Print summary
+        <span class="cov0" title="0">fmt.Printf("\nSummary: %d successful, %d failed\n", successCount, len(failedImages))
+        
+        if len(failedImages) &gt; 0 </span><span class="cov0" title="0">{
+                fmt.Printf("\nFailed images:\n")
+                for _, img := range failedImages </span><span class="cov0" title="0">{
+                        fmt.Printf("  - %s\n", img)
+                }</span>
+                <span class="cov0" title="0">return fmt.Errorf("failed to push %d images", len(failedImages))</span>
+        }
+        
+        <span class="cov0" title="0">return nil</span>
+}
+
+// selectContainerRuntime selects the appropriate container runtime
+func selectContainerRuntime() (containerruntime.ContainerRuntime, error) <span class="cov0" title="0">{
+        // If runtime is explicitly specified via flag
+        if runtimeName != "" </span><span class="cov0" title="0">{
+                selectedRuntime, err := runtimeDetector.GetByName(runtimeName)
+                if err != nil </span><span class="cov0" title="0">{
+                        return nil, fmt.Errorf("specified runtime '%s' is not available: %v", runtimeName, err)
+                }</span>
+                <span class="cov0" title="0">return selectedRuntime, nil</span>
+        }
+        
+        // Check if runtime is specified in config
+        <span class="cov0" title="0">var configuredRuntime string
+        if cfg != nil &amp;&amp; cfg.Runtime.Preferred != "" </span><span class="cov0" title="0">{
+                configuredRuntime = cfg.Runtime.Preferred
+        }</span>
+        
+        // If configured runtime is specified, try to use it
+        <span class="cov0" title="0">if configuredRuntime != "" </span><span class="cov0" title="0">{
+                configuredRuntimeObj, err := runtimeDetector.GetByName(configuredRuntime)
+                if err == nil </span><span class="cov0" title="0">{
+                        return configuredRuntimeObj, nil
+                }</span>
+                
+                // Configured runtime is not available, check for alternatives
+                <span class="cov0" title="0">available := runtimeDetector.DetectAvailable()
+                if len(available) == 0 </span><span class="cov0" title="0">{
+                        return nil, fmt.Errorf("no container runtime found. Please install docker, podman, or nerdctl")
+                }</span>
+                
+                // Check if auto-fallback is enabled
+                <span class="cov0" title="0">if autoFallback || (cfg != nil &amp;&amp; cfg.Runtime.AutoFallback) </span><span class="cov0" title="0">{
+                        fmt.Printf("Runtime '%s' unavailable, using '%s'\n", configuredRuntime, available[0].Name())
+                        return available[0], nil
+                }</span>
+                
+                // Ask user for confirmation
+                <span class="cov0" title="0">fmt.Printf("Runtime '%s' is not available\n", configuredRuntime)
+                fmt.Printf("Found available runtime: %s\n", available[0].Name())
+                fmt.Printf("Use '%s' instead of '%s'? (y/N): ", available[0].Name(), configuredRuntime)
+                
+                var response string
+                fmt.Scanln(&amp;response)
+                response = strings.ToLower(strings.TrimSpace(response))
+                
+                if response == "y" || response == "yes" </span><span class="cov0" title="0">{
+                        fmt.Printf("Using '%s' runtime\n", available[0].Name())
+                        return available[0], nil
+                }</span> else<span class="cov0" title="0"> {
+                        return nil, fmt.Errorf("user declined runtime fallback. Please install '%s' or update config", configuredRuntime)
+                }</span>
+        }
+        
+        // No specific runtime configured, use the preferred one
+        <span class="cov0" title="0">preferred := runtimeDetector.GetPreferred()
+        if preferred == nil </span><span class="cov0" title="0">{
+                return nil, fmt.Errorf("no container runtime found. Please install docker, podman, or nerdctl")
+        }</span>
+        
+        <span class="cov0" title="0">return preferred, nil</span>
+}
+
+// readImageList reads image list from file
+func readImageList(filename string) ([]string, error) <span class="cov0" title="0">{
+        file, err := os.Open(filename)
+        if err != nil </span><span class="cov0" title="0">{
+                return nil, fmt.Errorf("failed to open file %s: %v", filename, err)
+        }</span>
+        <span class="cov0" title="0">defer file.Close()
+        
+        var images []string
+        scanner := bufio.NewScanner(file)
+        
+        for scanner.Scan() </span><span class="cov0" title="0">{
+                line := strings.TrimSpace(scanner.Text())
+                // Skip empty lines and comments
+                if line != "" &amp;&amp; !strings.HasPrefix(line, "#") </span><span class="cov0" title="0">{
+                        images = append(images, line)
+                }</span>
+        }
+        
+        <span class="cov0" title="0">if err := scanner.Err(); err != nil </span><span class="cov0" title="0">{
+                return nil, fmt.Errorf("error reading file: %v", err)
+        }</span>
+        
+        <span class="cov0" title="0">if len(images) == 0 </span><span class="cov0" title="0">{
+                return nil, fmt.Errorf("no images found in file %s", filename)
+        }</span>
+        
+        <span class="cov0" title="0">return images, nil</span>
+}
+
+
+
+// saveImage saves a single image to tar file
+func saveImage(containerRuntime containerruntime.ContainerRuntime, image, baseDir string, mode int) error <span class="cov0" title="0">{
+        // Parse image name to generate tar filename
+        tarFilename := generateTarFilename(image)
+        
+        var tarPath string
+        
+        switch mode </span>{
+        case 1, 2:<span class="cov0" title="0">
+                // Mode 1: current directory, Mode 2: ./images/
+                tarPath = fmt.Sprintf("%s/%s", baseDir, tarFilename)</span>
+        case 3:<span class="cov0" title="0">
+                // Mode 3: ./images/&lt;project&gt;/
+                projectDir := extractProjectFromImage(image)
+                fullDir := fmt.Sprintf("%s/%s", baseDir, projectDir)
+                if err := os.MkdirAll(fullDir, 0755); err != nil </span><span class="cov0" title="0">{
+                        return fmt.Errorf("failed to create project directory %s: %v", fullDir, err)
+                }</span>
+                <span class="cov0" title="0">tarPath = fmt.Sprintf("%s/%s", fullDir, tarFilename)</span>
+        }
+        
+        // Execute save command using runtime interface
+        <span class="cov0" title="0">ctx, cancel := context.WithTimeout(context.Background(), 10*time.Minute)
+        defer cancel()
+        
+        if err := containerRuntime.Save(ctx, image, tarPath); err != nil </span><span class="cov0" title="0">{
+                return fmt.Errorf("failed to save image: %v", err)
+        }</span>
+        
+        // Check if file was created successfully
+        <span class="cov0" title="0">if _, err := os.Stat(tarPath); err != nil </span><span class="cov0" title="0">{
+                return fmt.Errorf("tar file was not created: %v", err)
+        }</span>
+        
+        <span class="cov0" title="0">fmt.Printf("  Saved: %s\n", tarPath)
+        return nil</span>
+}
+
+// generateTarFilename generates tar filename from image name
+func generateTarFilename(image string) string <span class="cov0" title="0">{
+        // Replace problematic characters for filename
+        filename := strings.ReplaceAll(image, "/", "_")
+        filename = strings.ReplaceAll(filename, ":", "_")
+        
+        // Add .tar extension
+        return filename + ".tar"
+}</span>
+
+// extractProjectFromImage extracts project name from image for mode 3
+func extractProjectFromImage(image string) string <span class="cov0" title="0">{
+        parts := strings.Split(image, "/")
+        
+        if len(parts) &gt;= 3 </span><span class="cov0" title="0">{
+                // For images like registry.k8s.io/coredns/coredns:v1.11.1
+                return parts[len(parts)-2] // Return "coredns"
+        }</span> else<span class="cov0" title="0"> if len(parts) == 2 </span><span class="cov0" title="0">{
+                // For images like calico/node:v3.28.2
+                return parts[0] // Return "calico"
+        }</span> else<span class="cov0" title="0"> {
+                // For images like nginx:latest
+                return "library" // Default project name
+        }</span>
+}
+
+// findTarFiles finds all .tar files in the specified directory
+func findTarFiles(dir string, recursive bool) ([]string, error) <span class="cov0" title="0">{
+        var tarFiles []string
+        
+        if recursive </span><span class="cov0" title="0">{
+                // Recursively find tar files in subdirectories
+                err := filepath.Walk(dir, func(path string, info os.FileInfo, err error) error </span><span class="cov0" title="0">{
+                        if err != nil </span><span class="cov0" title="0">{
+                                return err
+                        }</span>
+                        <span class="cov0" title="0">if !info.IsDir() &amp;&amp; strings.HasSuffix(strings.ToLower(info.Name()), ".tar") </span><span class="cov0" title="0">{
+                                tarFiles = append(tarFiles, path)
+                        }</span>
+                        <span class="cov0" title="0">return nil</span>
+                })
+                <span class="cov0" title="0">if err != nil </span><span class="cov0" title="0">{
+                        return nil, err
+                }</span>
+        } else<span class="cov0" title="0"> {
+                // Find tar files only in the specified directory
+                files, err := filepath.Glob(filepath.Join(dir, "*.tar"))
+                if err != nil </span><span class="cov0" title="0">{
+                        return nil, err
+                }</span>
+                <span class="cov0" title="0">tarFiles = files</span>
+        }
+        
+        <span class="cov0" title="0">return tarFiles, nil</span>
+}
+
+// loadImage loads a single tar file using the specified runtime
+func loadImage(containerRuntime containerruntime.ContainerRuntime, tarFile string) error <span class="cov0" title="0">{
+        ctx, cancel := context.WithTimeout(context.Background(), 10*time.Minute)
+        defer cancel()
+        
+        if err := containerRuntime.Load(ctx, tarFile); err != nil </span><span class="cov0" title="0">{
+                return fmt.Errorf("failed to load image: %v", err)
+        }</span>
+        
+        <span class="cov0" title="0">return nil</span>
+}
+
+// pushImage pushes a single image to registry with the specified mode
+func pushImage(containerRuntime containerruntime.ContainerRuntime, image, targetRegistry, targetProject string, mode int) error <span class="cov0" title="0">{
+        var targetImage string
+        
+        // Parse original image name and tag
+        imageName, imageTag := parseImageNameAndTag(image)
+        
+        switch mode </span>{
+        case 1:<span class="cov0" title="0">
+                // Mode 1: registry/image:tag (不包含项目名称)
+                targetImage = fmt.Sprintf("%s/%s:%s", targetRegistry, imageName, imageTag)</span>
+        case 2:<span class="cov0" title="0">
+                // Mode 2: registry/project/image:tag
+                targetImage = fmt.Sprintf("%s/%s/%s:%s", targetRegistry, targetProject, imageName, imageTag)
+                fmt.Printf("  Project: %s\n", targetProject)</span>
+        }
+        
+        <span class="cov0" title="0">fmt.Printf("  Tag: %s -&gt; %s\n", image, targetImage)
+        
+        // Tag the image
+        ctx, cancel := context.WithTimeout(context.Background(), 5*time.Minute)
+        defer cancel()
+        
+        if err := containerRuntime.Tag(ctx, image, targetImage); err != nil </span><span class="cov0" title="0">{
+                return fmt.Errorf("failed to tag image: %v", err)
+        }</span>
+        
+        // Push the image
+        <span class="cov0" title="0">pushOptions := containerruntime.PushOptions{
+                Timeout: 10 * time.Minute,
+        }
+        
+        if err := containerRuntime.Push(ctx, targetImage, pushOptions); err != nil </span><span class="cov0" title="0">{
+                return fmt.Errorf("failed to push image: %v", err)
+        }</span>
+        
+        <span class="cov0" title="0">fmt.Printf("  Pushed: %s\n", targetImage)
+        return nil</span>
+}
+
+// parseImageNameAndTag parses image name and tag from full image string
+func parseImageNameAndTag(image string) (string, string) <span class="cov0" title="0">{
+        parts := strings.Split(image, "/")
+        lastPart := parts[len(parts)-1]
+        
+        if strings.Contains(lastPart, ":") </span><span class="cov0" title="0">{
+                tagParts := strings.Split(lastPart, ":")
+                return tagParts[0], tagParts[1]
+        }</span>
+        
+        <span class="cov0" title="0">return lastPart, "latest"</span>
+}
+
+// printVersionInfo prints version information (legacy function)
+func printVersionInfo() <span class="cov0" title="0">{
+        version.PrintVersion()
+}</pre>
+		
+		<pre class="file" id="file2" style="display: none">package config
+
+import (
+        "fmt"
+        "os"
+        "path/filepath"
+        "strings"
+
+        "github.com/spf13/viper"
+        "github.com/harpoon/hpn/pkg/errors"
+        "github.com/harpoon/hpn/pkg/types"
+)
+
+// Manager handles configuration loading and management
+type Manager struct {
+        config *types.Config
+        viper  *viper.Viper
+}
+
+// NewManager creates a new configuration manager
+func NewManager() *Manager <span class="cov0" title="0">{
+        return &amp;Manager{
+                viper: viper.New(),
+        }
+}</span>
+
+// Load loads configuration from various sources with proper priority
+func (m *Manager) Load(configFile string) (*types.Config, error) <span class="cov0" title="0">{
+        // Start with default configuration
+        m.config = types.DefaultConfig()
+
+        // Set up viper
+        m.setupViper()
+
+        // Load configuration file if specified or found
+        if err := m.loadConfigFile(configFile); err != nil </span><span class="cov0" title="0">{
+                return nil, err
+        }</span>
+
+        // Load environment variables
+        <span class="cov0" title="0">m.loadEnvironmentVariables()
+
+        // Unmarshal into config struct
+        if err := m.viper.Unmarshal(m.config); err != nil </span><span class="cov0" title="0">{
+                return nil, errors.Wrap(err, errors.ErrConfigParsing, "failed to parse configuration")
+        }</span>
+
+        // Validate configuration
+        <span class="cov0" title="0">if err := ValidateConfig(m.config); err != nil </span><span class="cov0" title="0">{
+                return nil, err
+        }</span>
+
+        <span class="cov0" title="0">return m.config, nil</span>
+}
+
+// setupViper configures viper settings
+func (m *Manager) setupViper() <span class="cov0" title="0">{
+        m.viper.SetConfigName("config")
+        m.viper.SetConfigType("yaml")
+        
+        // Add config search paths
+        m.viper.AddConfigPath(".")
+        m.viper.AddConfigPath("$HOME/.hpn")
+        m.viper.AddConfigPath("/etc/hpn")
+
+        // Set environment variable prefix
+        m.viper.SetEnvPrefix("HPN")
+        m.viper.AutomaticEnv()
+        
+        // Replace dots and dashes with underscores for env vars
+        m.viper.SetEnvKeyReplacer(strings.NewReplacer(".", "_", "-", "_"))
+}</span>
+
+// loadConfigFile loads configuration from file
+func (m *Manager) loadConfigFile(configFile string) error <span class="cov0" title="0">{
+        if configFile != "" </span><span class="cov0" title="0">{
+                // Use specified config file
+                m.viper.SetConfigFile(configFile)
+                if err := m.viper.ReadInConfig(); err != nil </span><span class="cov0" title="0">{
+                        if os.IsNotExist(err) </span><span class="cov0" title="0">{
+                                return errors.New(errors.ErrConfigNotFound, fmt.Sprintf("config file not found: %s", configFile))
+                        }</span>
+                        <span class="cov0" title="0">return errors.Wrap(err, errors.ErrConfigParsing, fmt.Sprintf("failed to read config file: %s", configFile))</span>
+                }
+        } else<span class="cov0" title="0"> {
+                // Try to find config file in search paths
+                if err := m.viper.ReadInConfig(); err != nil </span><span class="cov0" title="0">{
+                        // It's okay if no config file is found, we'll use defaults
+                        if _, ok := err.(viper.ConfigFileNotFoundError); !ok </span><span class="cov0" title="0">{
+                                return errors.Wrap(err, errors.ErrConfigParsing, "failed to read config file")
+                        }</span>
+                }
+        }
+
+        <span class="cov0" title="0">return nil</span>
+}
+
+// loadEnvironmentVariables sets up environment variable mappings
+func (m *Manager) loadEnvironmentVariables() <span class="cov0" title="0">{
+        // Map environment variables to config keys
+        envMappings := map[string]string{
+                "HPN_REGISTRY":           "registry",
+                "HPN_PROJECT":            "project",
+                "HPN_PROXY_HTTP":         "proxy.http",
+                "HPN_PROXY_HTTPS":        "proxy.https",
+                "HPN_PROXY_ENABLED":      "proxy.enabled",
+                "HPN_RUNTIME_PREFERRED":  "runtime.preferred",
+                "HPN_RUNTIME_TIMEOUT":    "runtime.timeout",
+                "HPN_LOG_LEVEL":          "logging.level",
+                "HPN_LOG_FORMAT":         "logging.format",
+                "HPN_LOG_FILE":           "logging.file",
+                "HPN_LOG_CONSOLE":        "logging.console",
+                "HPN_PARALLEL_MAX":       "parallel.max_workers",
+                "HPN_PARALLEL_AUTO":      "parallel.auto_adjust",
+        }
+
+        for envVar, configKey := range envMappings </span><span class="cov0" title="0">{
+                if value := os.Getenv(envVar); value != "" </span><span class="cov0" title="0">{
+                        m.viper.Set(configKey, value)
+                }</span>
+        }
+
+        // Handle proxy environment variables (standard names)
+        <span class="cov0" title="0">if httpProxy := os.Getenv("http_proxy"); httpProxy != "" </span><span class="cov0" title="0">{
+                m.viper.Set("proxy.http", httpProxy)
+                m.viper.Set("proxy.enabled", true)
+        }</span>
+        <span class="cov0" title="0">if httpsProxy := os.Getenv("https_proxy"); httpsProxy != "" </span><span class="cov0" title="0">{
+                m.viper.Set("proxy.https", httpsProxy)
+                m.viper.Set("proxy.enabled", true)
+        }</span>
+}
+
+// GetConfigPath returns the path of the loaded config file
+func (m *Manager) GetConfigPath() string <span class="cov0" title="0">{
+        return m.viper.ConfigFileUsed()
+}</span>
+
+// WriteConfig writes the current configuration to a file
+func (m *Manager) WriteConfig(filename string) error <span class="cov0" title="0">{
+        if filename == "" </span><span class="cov0" title="0">{
+                return errors.New(errors.ErrInvalidConfig, "config filename cannot be empty")
+        }</span>
+
+        // Ensure directory exists
+        <span class="cov0" title="0">dir := filepath.Dir(filename)
+        if err := os.MkdirAll(dir, 0755); err != nil </span><span class="cov0" title="0">{
+                return errors.Wrap(err, errors.ErrFileOperation, "failed to create config directory")
+        }</span>
+
+        // Write config file
+        <span class="cov0" title="0">m.viper.SetConfigFile(filename)
+        if err := m.viper.WriteConfig(); err != nil </span><span class="cov0" title="0">{
+                return errors.Wrap(err, errors.ErrFileOperation, "failed to write config file")
+        }</span>
+
+        <span class="cov0" title="0">return nil</span>
+}
+
+// GetConfig returns the current configuration
+func (m *Manager) GetConfig() *types.Config <span class="cov0" title="0">{
+        return m.config
+}</span>
+
+// SetConfig sets the configuration
+func (m *Manager) SetConfig(config *types.Config) <span class="cov0" title="0">{
+        m.config = config
+}</pre>
+		
+		<pre class="file" id="file3" style="display: none">package config
+
+import (
+        "fmt"
+        "net/url"
+        "os"
+        "path/filepath"
+        "strings"
+        "time"
+
+        "github.com/harpoon/hpn/pkg/errors"
+        "github.com/harpoon/hpn/pkg/types"
+)
+
+// ValidateConfig validates the entire configuration
+func ValidateConfig(cfg *types.Config) error <span class="cov0" title="0">{
+        if err := validateRegistry(cfg.Registry); err != nil </span><span class="cov0" title="0">{
+                return err
+        }</span>
+
+        <span class="cov0" title="0">if err := validateProject(cfg.Project); err != nil </span><span class="cov0" title="0">{
+                return err
+        }</span>
+
+        <span class="cov0" title="0">if err := validateProxyConfig(&amp;cfg.Proxy); err != nil </span><span class="cov0" title="0">{
+                return err
+        }</span>
+
+        <span class="cov0" title="0">if err := validateRuntimeConfig(&amp;cfg.Runtime); err != nil </span><span class="cov0" title="0">{
+                return err
+        }</span>
+
+        <span class="cov0" title="0">if err := validateLoggingConfig(&amp;cfg.Logging); err != nil </span><span class="cov0" title="0">{
+                return err
+        }</span>
+
+        <span class="cov0" title="0">if err := validateParallelConfig(&amp;cfg.Parallel); err != nil </span><span class="cov0" title="0">{
+                return err
+        }</span>
+
+        <span class="cov0" title="0">if err := validateModeConfig(&amp;cfg.Modes); err != nil </span><span class="cov0" title="0">{
+                return err
+        }</span>
+
+        <span class="cov0" title="0">return nil</span>
+}
+
+// validateRegistry validates registry configuration
+func validateRegistry(registry string) error <span class="cov0" title="0">{
+        if registry == "" </span><span class="cov0" title="0">{
+                return errors.New(errors.ErrInvalidConfig, "registry cannot be empty")
+        }</span>
+
+        // Check if it's a valid hostname or IP
+        <span class="cov0" title="0">if strings.Contains(registry, "://") </span><span class="cov0" title="0">{
+                return errors.New(errors.ErrInvalidConfig, "registry should not include protocol (http/https)")
+        }</span>
+
+        <span class="cov0" title="0">return nil</span>
+}
+
+// validateProject validates project configuration
+func validateProject(project string) error <span class="cov0" title="0">{
+        if project == "" </span><span class="cov0" title="0">{
+                return errors.New(errors.ErrInvalidConfig, "project cannot be empty")
+        }</span>
+
+        // Check for invalid characters
+        <span class="cov0" title="0">invalidChars := []string{":", "@", " ", "\t", "\n"}
+        for _, char := range invalidChars </span><span class="cov0" title="0">{
+                if strings.Contains(project, char) </span><span class="cov0" title="0">{
+                        return errors.New(errors.ErrInvalidConfig, fmt.Sprintf("project name contains invalid character: %s", char))
+                }</span>
+        }
+
+        <span class="cov0" title="0">return nil</span>
+}
+
+// validateProxyConfig validates proxy configuration
+func validateProxyConfig(proxy *types.ProxyConfig) error <span class="cov0" title="0">{
+        if !proxy.Enabled </span><span class="cov0" title="0">{
+                return nil
+        }</span>
+
+        <span class="cov0" title="0">if proxy.HTTP != "" </span><span class="cov0" title="0">{
+                if err := validateProxyURL(proxy.HTTP); err != nil </span><span class="cov0" title="0">{
+                        return errors.Wrap(err, errors.ErrInvalidConfig, "invalid HTTP proxy URL")
+                }</span>
+        }
+
+        <span class="cov0" title="0">if proxy.HTTPS != "" </span><span class="cov0" title="0">{
+                if err := validateProxyURL(proxy.HTTPS); err != nil </span><span class="cov0" title="0">{
+                        return errors.Wrap(err, errors.ErrInvalidConfig, "invalid HTTPS proxy URL")
+                }</span>
+        }
+
+        <span class="cov0" title="0">return nil</span>
+}
+
+// validateProxyURL validates a proxy URL
+func validateProxyURL(proxyURL string) error <span class="cov0" title="0">{
+        if proxyURL == "" </span><span class="cov0" title="0">{
+                return nil
+        }</span>
+
+        <span class="cov0" title="0">u, err := url.Parse(proxyURL)
+        if err != nil </span><span class="cov0" title="0">{
+                return fmt.Errorf("invalid URL format: %v", err)
+        }</span>
+
+        <span class="cov0" title="0">if u.Scheme != "http" &amp;&amp; u.Scheme != "https" </span><span class="cov0" title="0">{
+                return fmt.Errorf("proxy URL must use http or https scheme")
+        }</span>
+
+        <span class="cov0" title="0">if u.Host == "" </span><span class="cov0" title="0">{
+                return fmt.Errorf("proxy URL must have a host")
+        }</span>
+
+        <span class="cov0" title="0">return nil</span>
+}
+
+// validateRuntimeConfig validates runtime configuration
+func validateRuntimeConfig(runtime *types.RuntimeConfig) error <span class="cov0" title="0">{
+        if runtime.Preferred != "" </span><span class="cov0" title="0">{
+                validRuntimes := []string{"docker", "podman", "nerdctl"}
+                valid := false
+                for _, r := range validRuntimes </span><span class="cov0" title="0">{
+                        if runtime.Preferred == r </span><span class="cov0" title="0">{
+                                valid = true
+                                break</span>
+                        }
+                }
+                <span class="cov0" title="0">if !valid </span><span class="cov0" title="0">{
+                        return errors.New(errors.ErrInvalidConfig, fmt.Sprintf("invalid preferred runtime: %s (must be one of: %s)", runtime.Preferred, strings.Join(validRuntimes, ", ")))
+                }</span>
+        }
+
+        <span class="cov0" title="0">if runtime.Timeout &lt;= 0 </span><span class="cov0" title="0">{
+                return errors.New(errors.ErrInvalidConfig, "runtime timeout must be positive")
+        }</span>
+
+        <span class="cov0" title="0">if runtime.Timeout &gt; 30*time.Minute </span><span class="cov0" title="0">{
+                return errors.New(errors.ErrInvalidConfig, "runtime timeout cannot exceed 30 minutes")
+        }</span>
+
+        <span class="cov0" title="0">return validateRetryConfig(&amp;runtime.Retry)</span>
+}
+
+// validateRetryConfig validates retry configuration
+func validateRetryConfig(retry *types.RetryConfig) error <span class="cov0" title="0">{
+        if retry.MaxAttempts &lt; 1 </span><span class="cov0" title="0">{
+                return errors.New(errors.ErrInvalidConfig, "retry max attempts must be at least 1")
+        }</span>
+
+        <span class="cov0" title="0">if retry.MaxAttempts &gt; 10 </span><span class="cov0" title="0">{
+                return errors.New(errors.ErrInvalidConfig, "retry max attempts cannot exceed 10")
+        }</span>
+
+        <span class="cov0" title="0">if retry.Delay &lt;= 0 </span><span class="cov0" title="0">{
+                return errors.New(errors.ErrInvalidConfig, "retry delay must be positive")
+        }</span>
+
+        <span class="cov0" title="0">if retry.MaxDelay &lt;= retry.Delay </span><span class="cov0" title="0">{
+                return errors.New(errors.ErrInvalidConfig, "retry max delay must be greater than delay")
+        }</span>
+
+        <span class="cov0" title="0">return nil</span>
+}
+
+// validateLoggingConfig validates logging configuration
+func validateLoggingConfig(logging *types.LoggingConfig) error <span class="cov0" title="0">{
+        validLevels := []string{"debug", "info", "warn", "error"}
+        valid := false
+        for _, level := range validLevels </span><span class="cov0" title="0">{
+                if logging.Level == level </span><span class="cov0" title="0">{
+                        valid = true
+                        break</span>
+                }
+        }
+        <span class="cov0" title="0">if !valid </span><span class="cov0" title="0">{
+                return errors.New(errors.ErrInvalidConfig, fmt.Sprintf("invalid log level: %s (must be one of: %s)", logging.Level, strings.Join(validLevels, ", ")))
+        }</span>
+
+        <span class="cov0" title="0">validFormats := []string{"text", "json"}
+        valid = false
+        for _, format := range validFormats </span><span class="cov0" title="0">{
+                if logging.Format == format </span><span class="cov0" title="0">{
+                        valid = true
+                        break</span>
+                }
+        }
+        <span class="cov0" title="0">if !valid </span><span class="cov0" title="0">{
+                return errors.New(errors.ErrInvalidConfig, fmt.Sprintf("invalid log format: %s (must be one of: %s)", logging.Format, strings.Join(validFormats, ", ")))
+        }</span>
+
+        <span class="cov0" title="0">if logging.File != "" </span><span class="cov0" title="0">{
+                // Check if the directory exists and is writable
+                dir := filepath.Dir(logging.File)
+                if err := validateDirectory(dir); err != nil </span><span class="cov0" title="0">{
+                        return errors.Wrap(err, errors.ErrInvalidConfig, "invalid log file directory")
+                }</span>
+        }
+
+        <span class="cov0" title="0">return nil</span>
+}
+
+// validateParallelConfig validates parallel processing configuration
+func validateParallelConfig(parallel *types.ParallelConfig) error <span class="cov0" title="0">{
+        if parallel.MaxWorkers &lt; 1 </span><span class="cov0" title="0">{
+                return errors.New(errors.ErrInvalidConfig, "max workers must be at least 1")
+        }</span>
+
+        <span class="cov0" title="0">if parallel.MaxWorkers &gt; 100 </span><span class="cov0" title="0">{
+                return errors.New(errors.ErrInvalidConfig, "max workers cannot exceed 100")
+        }</span>
+
+        <span class="cov0" title="0">return nil</span>
+}
+
+// validateModeConfig validates operation mode configuration
+func validateModeConfig(modes *types.ModeConfig) error <span class="cov0" title="0">{
+        if modes.SaveMode &lt; 1 || modes.SaveMode &gt; 3 </span><span class="cov0" title="0">{
+                return errors.New(errors.ErrInvalidConfig, "save mode must be 1, 2, or 3")
+        }</span>
+
+        <span class="cov0" title="0">if modes.LoadMode &lt; 1 || modes.LoadMode &gt; 3 </span><span class="cov0" title="0">{
+                return errors.New(errors.ErrInvalidConfig, "load mode must be 1, 2, or 3")
+        }</span>
+
+        <span class="cov0" title="0">if modes.PushMode &lt; 1 || modes.PushMode &gt; 3 </span><span class="cov0" title="0">{
+                return errors.New(errors.ErrInvalidConfig, "push mode must be 1, 2, or 3")
+        }</span>
+
+        <span class="cov0" title="0">return nil</span>
+}
+
+// validateDirectory checks if a directory exists and is writable
+func validateDirectory(dir string) error <span class="cov0" title="0">{
+        info, err := os.Stat(dir)
+        if err != nil </span><span class="cov0" title="0">{
+                if os.IsNotExist(err) </span><span class="cov0" title="0">{
+                        // Try to create the directory
+                        if err := os.MkdirAll(dir, 0755); err != nil </span><span class="cov0" title="0">{
+                                return fmt.Errorf("cannot create directory: %v", err)
+                        }</span>
+                        <span class="cov0" title="0">return nil</span>
+                }
+                <span class="cov0" title="0">return fmt.Errorf("cannot access directory: %v", err)</span>
+        }
+
+        <span class="cov0" title="0">if !info.IsDir() </span><span class="cov0" title="0">{
+                return fmt.Errorf("path is not a directory")
+        }</span>
+
+        // Test write permission by creating a temporary file
+        <span class="cov0" title="0">tempFile := filepath.Join(dir, ".hpn_write_test")
+        f, err := os.Create(tempFile)
+        if err != nil </span><span class="cov0" title="0">{
+                return fmt.Errorf("directory is not writable: %v", err)
+        }</span>
+        <span class="cov0" title="0">f.Close()
+        os.Remove(tempFile)
+
+        return nil</span>
+}</pre>
+		
+		<pre class="file" id="file4" style="display: none">package logger
+
+import "context"
+
+// Logger defines the logging interface
+type Logger interface {
+        // Debug logs a debug message
+        Debug(msg string, fields ...Field)
+        
+        // Info logs an info message
+        Info(msg string, fields ...Field)
+        
+        // Warn logs a warning message
+        Warn(msg string, fields ...Field)
+        
+        // Error logs an error message
+        Error(msg string, fields ...Field)
+        
+        // WithFields returns a logger with additional fields
+        WithFields(fields ...Field) Logger
+        
+        // WithContext returns a logger with context
+        WithContext(ctx context.Context) Logger
+}
+
+// Field represents a structured logging field
+type Field struct {
+        Key   string
+        Value interface{}
+}
+
+// LogLevel represents the logging level
+type LogLevel int
+
+const (
+        DebugLevel LogLevel = iota
+        InfoLevel
+        WarnLevel
+        ErrorLevel
+)
+
+// String returns the string representation of the log level
+func (l LogLevel) String() string <span class="cov0" title="0">{
+        switch l </span>{
+        case DebugLevel:<span class="cov0" title="0">
+                return "debug"</span>
+        case InfoLevel:<span class="cov0" title="0">
+                return "info"</span>
+        case WarnLevel:<span class="cov0" title="0">
+                return "warn"</span>
+        case ErrorLevel:<span class="cov0" title="0">
+                return "error"</span>
+        default:<span class="cov0" title="0">
+                return "unknown"</span>
+        }
+}
+
+// ParseLogLevel parses a string into a LogLevel
+func ParseLogLevel(level string) LogLevel <span class="cov0" title="0">{
+        switch level </span>{
+        case "debug":<span class="cov0" title="0">
+                return DebugLevel</span>
+        case "info":<span class="cov0" title="0">
+                return InfoLevel</span>
+        case "warn":<span class="cov0" title="0">
+                return WarnLevel</span>
+        case "error":<span class="cov0" title="0">
+                return ErrorLevel</span>
+        default:<span class="cov0" title="0">
+                return InfoLevel</span>
+        }
+}</pre>
+		
+		<pre class="file" id="file5" style="display: none">package runtime
+
+import (
+        "fmt"
+        "os/exec"
+        "sort"
+
+        "github.com/harpoon/hpn/pkg/errors"
+)
+
+// Detector implements RuntimeDetector interface
+type Detector struct {
+        runtimes map[string]ContainerRuntime
+}
+
+// NewDetector creates a new runtime detector
+func NewDetector() *Detector <span class="cov0" title="0">{
+        return &amp;Detector{
+                runtimes: make(map[string]ContainerRuntime),
+        }
+}</span>
+
+// DetectAvailable detects all available container runtimes
+func (d *Detector) DetectAvailable() []ContainerRuntime <span class="cov0" title="0">{
+        var available []ContainerRuntime
+
+        // Initialize runtime implementations
+        runtimes := []ContainerRuntime{
+                NewDockerRuntime(),
+                NewPodmanRuntime(),
+                NewNerdctlRuntime(),
+        }
+
+        // Check availability and store
+        for _, runtime := range runtimes </span><span class="cov0" title="0">{
+                if runtime.IsAvailable() </span><span class="cov0" title="0">{
+                        available = append(available, runtime)
+                        d.runtimes[runtime.Name()] = runtime
+                }</span>
+        }
+
+        // Sort by priority (Docker &gt; Podman &gt; Nerdctl)
+        <span class="cov0" title="0">sort.Slice(available, func(i, j int) bool </span><span class="cov0" title="0">{
+                priority := map[string]int{
+                        "docker":  1,
+                        "podman":  2,
+                        "nerdctl": 3,
+                }
+                return priority[available[i].Name()] &lt; priority[available[j].Name()]
+        }</span>)
+
+        <span class="cov0" title="0">return available</span>
+}
+
+// GetPreferred returns the preferred runtime based on priority
+func (d *Detector) GetPreferred() ContainerRuntime <span class="cov0" title="0">{
+        available := d.DetectAvailable()
+        if len(available) == 0 </span><span class="cov0" title="0">{
+                return nil
+        }</span>
+        <span class="cov0" title="0">return available[0]</span>
+}
+
+// GetByName returns a runtime by name
+func (d *Detector) GetByName(name string) (ContainerRuntime, error) <span class="cov0" title="0">{
+        // Ensure detection has been run
+        if len(d.runtimes) == 0 </span><span class="cov0" title="0">{
+                d.DetectAvailable()
+        }</span>
+
+        <span class="cov0" title="0">runtime, exists := d.runtimes[name]
+        if !exists </span><span class="cov0" title="0">{
+                return nil, errors.NewRuntimeNotFound(name)
+        }</span>
+
+        <span class="cov0" title="0">if !runtime.IsAvailable() </span><span class="cov0" title="0">{
+                return nil, errors.New(errors.ErrRuntimeUnavailable, fmt.Sprintf("runtime '%s' is not available", name))
+        }</span>
+
+        <span class="cov0" title="0">return runtime, nil</span>
+}
+
+// IsCommandAvailable checks if a command is available in PATH
+func IsCommandAvailable(command string) bool <span class="cov0" title="0">{
+        _, err := exec.LookPath(command)
+        return err == nil
+}</pre>
+		
+		<pre class="file" id="file6" style="display: none">package runtime
+
+import (
+        "context"
+        "fmt"
+        "os"
+        "os/exec"
+        "strings"
+        "time"
+
+        "github.com/harpoon/hpn/pkg/errors"
+)
+
+// DockerRuntime implements ContainerRuntime for Docker
+type DockerRuntime struct {
+        command string
+}
+
+// NewDockerRuntime creates a new Docker runtime
+func NewDockerRuntime() *DockerRuntime <span class="cov0" title="0">{
+        return &amp;DockerRuntime{
+                command: "docker",
+        }
+}</span>
+
+// Name returns the runtime name
+func (d *DockerRuntime) Name() string <span class="cov0" title="0">{
+        return "docker"
+}</span>
+
+// IsAvailable checks if Docker is available
+func (d *DockerRuntime) IsAvailable() bool <span class="cov0" title="0">{
+        if !IsCommandAvailable(d.command) </span><span class="cov0" title="0">{
+                return false
+        }</span>
+
+        // Test if Docker daemon is running
+        <span class="cov0" title="0">ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
+        defer cancel()
+
+        cmd := exec.CommandContext(ctx, d.command, "version", "--format", "{{.Server.Version}}")
+        return cmd.Run() == nil</span>
+}
+
+// Pull pulls an image from a registry
+func (d *DockerRuntime) Pull(ctx context.Context, image string, options PullOptions) error <span class="cov0" title="0">{
+        args := []string{"pull"}
+
+        // Add platform if specified
+        if options.Platform != "" </span><span class="cov0" title="0">{
+                args = append(args, "--platform", options.Platform)
+        }</span>
+
+        <span class="cov0" title="0">args = append(args, image)
+
+        cmd := exec.CommandContext(ctx, d.command, args...)
+
+        // Set proxy environment if configured
+        if options.Proxy != nil &amp;&amp; options.Proxy.Enabled </span><span class="cov0" title="0">{
+                env := os.Environ()
+                if options.Proxy.HTTP != "" </span><span class="cov0" title="0">{
+                        env = append(env, fmt.Sprintf("http_proxy=%s", options.Proxy.HTTP))
+                }</span>
+                <span class="cov0" title="0">if options.Proxy.HTTPS != "" </span><span class="cov0" title="0">{
+                        env = append(env, fmt.Sprintf("https_proxy=%s", options.Proxy.HTTPS))
+                }</span>
+                <span class="cov0" title="0">cmd.Env = env</span>
+        }
+
+        <span class="cov0" title="0">if err := cmd.Run(); err != nil </span><span class="cov0" title="0">{
+                return errors.Wrap(err, errors.ErrRuntimeCommand, fmt.Sprintf("failed to pull image %s", image))
+        }</span>
+
+        <span class="cov0" title="0">return nil</span>
+}
+
+// Save saves an image to a tar file
+func (d *DockerRuntime) Save(ctx context.Context, image string, tarPath string) error <span class="cov0" title="0">{
+        cmd := exec.CommandContext(ctx, d.command, "save", "-o", tarPath, image)
+        
+        if err := cmd.Run(); err != nil </span><span class="cov0" title="0">{
+                return errors.Wrap(err, errors.ErrRuntimeCommand, fmt.Sprintf("failed to save image %s to %s", image, tarPath))
+        }</span>
+
+        <span class="cov0" title="0">return nil</span>
+}
+
+// Load loads an image from a tar file
+func (d *DockerRuntime) Load(ctx context.Context, tarPath string) error <span class="cov0" title="0">{
+        cmd := exec.CommandContext(ctx, d.command, "load", "-i", tarPath)
+        
+        if err := cmd.Run(); err != nil </span><span class="cov0" title="0">{
+                return errors.Wrap(err, errors.ErrRuntimeCommand, fmt.Sprintf("failed to load image from %s", tarPath))
+        }</span>
+
+        <span class="cov0" title="0">return nil</span>
+}
+
+// Push pushes an image to a registry
+func (d *DockerRuntime) Push(ctx context.Context, image string, options PushOptions) error <span class="cov0" title="0">{
+        cmd := exec.CommandContext(ctx, d.command, "push", image)
+        
+        if err := cmd.Run(); err != nil </span><span class="cov0" title="0">{
+                return errors.Wrap(err, errors.ErrRuntimeCommand, fmt.Sprintf("failed to push image %s", image))
+        }</span>
+
+        <span class="cov0" title="0">return nil</span>
+}
+
+// Tag tags an image with a new name
+func (d *DockerRuntime) Tag(ctx context.Context, source, target string) error <span class="cov0" title="0">{
+        cmd := exec.CommandContext(ctx, d.command, "tag", source, target)
+        
+        if err := cmd.Run(); err != nil </span><span class="cov0" title="0">{
+                return errors.Wrap(err, errors.ErrRuntimeCommand, fmt.Sprintf("failed to tag image %s as %s", source, target))
+        }</span>
+
+        <span class="cov0" title="0">return nil</span>
+}
+
+// Version returns the Docker version
+func (d *DockerRuntime) Version() (string, error) <span class="cov0" title="0">{
+        cmd := exec.Command(d.command, "version", "--format", "{{.Client.Version}}")
+        output, err := cmd.Output()
+        if err != nil </span><span class="cov0" title="0">{
+                return "", errors.Wrap(err, errors.ErrRuntimeCommand, "failed to get Docker version")
+        }</span>
+
+        <span class="cov0" title="0">return strings.TrimSpace(string(output)), nil</span>
+}</pre>
+		
+		<pre class="file" id="file7" style="display: none">package runtime
+
+import (
+        "context"
+        "fmt"
+        "os"
+        "os/exec"
+        "strings"
+        "time"
+
+        "github.com/harpoon/hpn/pkg/errors"
+)
+
+// NerdctlRuntime implements ContainerRuntime for Nerdctl
+type NerdctlRuntime struct {
+        command string
+}
+
+// NewNerdctlRuntime creates a new Nerdctl runtime
+func NewNerdctlRuntime() *NerdctlRuntime <span class="cov0" title="0">{
+        return &amp;NerdctlRuntime{
+                command: "nerdctl",
+        }
+}</span>
+
+// Name returns the runtime name
+func (n *NerdctlRuntime) Name() string <span class="cov0" title="0">{
+        return "nerdctl"
+}</span>
+
+// IsAvailable checks if Nerdctl is available
+func (n *NerdctlRuntime) IsAvailable() bool <span class="cov0" title="0">{
+        if !IsCommandAvailable(n.command) </span><span class="cov0" title="0">{
+                return false
+        }</span>
+
+        // Test if Nerdctl is working
+        <span class="cov0" title="0">ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
+        defer cancel()
+
+        cmd := exec.CommandContext(ctx, n.command, "version")
+        return cmd.Run() == nil</span>
+}
+
+// Pull pulls an image from a registry
+func (n *NerdctlRuntime) Pull(ctx context.Context, image string, options PullOptions) error <span class="cov0" title="0">{
+        args := []string{"pull"}
+
+        // Add insecure registry flag for private registries
+        args = append(args, "--insecure-registry")
+
+        // Add platform if specified
+        if options.Platform != "" </span><span class="cov0" title="0">{
+                args = append(args, "--platform", options.Platform)
+        }</span>
+
+        <span class="cov0" title="0">args = append(args, image)
+
+        cmd := exec.CommandContext(ctx, n.command, args...)
+
+        // Set proxy environment if configured
+        if options.Proxy != nil &amp;&amp; options.Proxy.Enabled </span><span class="cov0" title="0">{
+                env := os.Environ()
+                if options.Proxy.HTTP != "" </span><span class="cov0" title="0">{
+                        env = append(env, fmt.Sprintf("http_proxy=%s", options.Proxy.HTTP))
+                }</span>
+                <span class="cov0" title="0">if options.Proxy.HTTPS != "" </span><span class="cov0" title="0">{
+                        env = append(env, fmt.Sprintf("https_proxy=%s", options.Proxy.HTTPS))
+                }</span>
+                <span class="cov0" title="0">cmd.Env = env</span>
+        }
+
+        <span class="cov0" title="0">if err := cmd.Run(); err != nil </span><span class="cov0" title="0">{
+                return errors.Wrap(err, errors.ErrRuntimeCommand, fmt.Sprintf("failed to pull image %s", image))
+        }</span>
+
+        <span class="cov0" title="0">return nil</span>
+}
+
+// Save saves an image to a tar file
+func (n *NerdctlRuntime) Save(ctx context.Context, image string, tarPath string) error <span class="cov0" title="0">{
+        cmd := exec.CommandContext(ctx, n.command, "save", "-o", tarPath, image)
+        
+        if err := cmd.Run(); err != nil </span><span class="cov0" title="0">{
+                return errors.Wrap(err, errors.ErrRuntimeCommand, fmt.Sprintf("failed to save image %s to %s", image, tarPath))
+        }</span>
+
+        <span class="cov0" title="0">return nil</span>
+}
+
+// Load loads an image from a tar file
+func (n *NerdctlRuntime) Load(ctx context.Context, tarPath string) error <span class="cov0" title="0">{
+        cmd := exec.CommandContext(ctx, n.command, "load", "-i", tarPath)
+        
+        if err := cmd.Run(); err != nil </span><span class="cov0" title="0">{
+                return errors.Wrap(err, errors.ErrRuntimeCommand, fmt.Sprintf("failed to load image from %s", tarPath))
+        }</span>
+
+        <span class="cov0" title="0">return nil</span>
+}
+
+// Push pushes an image to a registry
+func (n *NerdctlRuntime) Push(ctx context.Context, image string, options PushOptions) error <span class="cov0" title="0">{
+        args := []string{"push"}
+        
+        // Add insecure registry flag for private registries
+        args = append(args, "--insecure-registry")
+        args = append(args, image)
+
+        cmd := exec.CommandContext(ctx, n.command, args...)
+        
+        if err := cmd.Run(); err != nil </span><span class="cov0" title="0">{
+                return errors.Wrap(err, errors.ErrRuntimeCommand, fmt.Sprintf("failed to push image %s", image))
+        }</span>
+
+        <span class="cov0" title="0">return nil</span>
+}
+
+// Tag tags an image with a new name
+func (n *NerdctlRuntime) Tag(ctx context.Context, source, target string) error <span class="cov0" title="0">{
+        cmd := exec.CommandContext(ctx, n.command, "tag", source, target)
+        
+        if err := cmd.Run(); err != nil </span><span class="cov0" title="0">{
+                return errors.Wrap(err, errors.ErrRuntimeCommand, fmt.Sprintf("failed to tag image %s as %s", source, target))
+        }</span>
+
+        <span class="cov0" title="0">return nil</span>
+}
+
+// Version returns the Nerdctl version
+func (n *NerdctlRuntime) Version() (string, error) <span class="cov0" title="0">{
+        cmd := exec.Command(n.command, "version", "--format", "{{.Client.Version}}")
+        output, err := cmd.Output()
+        if err != nil </span><span class="cov0" title="0">{
+                // Try alternative format
+                cmd = exec.Command(n.command, "version")
+                output, err = cmd.Output()
+                if err != nil </span><span class="cov0" title="0">{
+                        return "", errors.Wrap(err, errors.ErrRuntimeCommand, "failed to get Nerdctl version")
+                }</span>
+                
+                // Parse version from output
+                <span class="cov0" title="0">lines := strings.Split(string(output), "\n")
+                for _, line := range lines </span><span class="cov0" title="0">{
+                        if strings.Contains(line, "Version:") </span><span class="cov0" title="0">{
+                                parts := strings.Split(line, ":")
+                                if len(parts) &gt; 1 </span><span class="cov0" title="0">{
+                                        return strings.TrimSpace(parts[1]), nil
+                                }</span>
+                        }
+                }
+                <span class="cov0" title="0">return "unknown", nil</span>
+        }
+
+        <span class="cov0" title="0">return strings.TrimSpace(string(output)), nil</span>
+}</pre>
+		
+		<pre class="file" id="file8" style="display: none">package runtime
+
+import (
+        "context"
+        "fmt"
+        "os"
+        "os/exec"
+        "strings"
+        "time"
+
+        "github.com/harpoon/hpn/pkg/errors"
+)
+
+// PodmanRuntime implements ContainerRuntime for Podman
+type PodmanRuntime struct {
+        command string
+}
+
+// NewPodmanRuntime creates a new Podman runtime
+func NewPodmanRuntime() *PodmanRuntime <span class="cov0" title="0">{
+        return &amp;PodmanRuntime{
+                command: "podman",
+        }
+}</span>
+
+// Name returns the runtime name
+func (p *PodmanRuntime) Name() string <span class="cov0" title="0">{
+        return "podman"
+}</span>
+
+// IsAvailable checks if Podman is available
+func (p *PodmanRuntime) IsAvailable() bool <span class="cov0" title="0">{
+        if !IsCommandAvailable(p.command) </span><span class="cov0" title="0">{
+                return false
+        }</span>
+
+        // Test if Podman is working
+        <span class="cov0" title="0">ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
+        defer cancel()
+
+        cmd := exec.CommandContext(ctx, p.command, "version", "--format", "{{.Version}}")
+        return cmd.Run() == nil</span>
+}
+
+// Pull pulls an image from a registry
+func (p *PodmanRuntime) Pull(ctx context.Context, image string, options PullOptions) error <span class="cov0" title="0">{
+        args := []string{"pull"}
+
+        // Add platform if specified
+        if options.Platform != "" </span><span class="cov0" title="0">{
+                args = append(args, "--platform", options.Platform)
+        }</span>
+
+        <span class="cov0" title="0">args = append(args, image)
+
+        cmd := exec.CommandContext(ctx, p.command, args...)
+
+        // Set proxy environment if configured
+        if options.Proxy != nil &amp;&amp; options.Proxy.Enabled </span><span class="cov0" title="0">{
+                env := os.Environ()
+                if options.Proxy.HTTP != "" </span><span class="cov0" title="0">{
+                        env = append(env, fmt.Sprintf("http_proxy=%s", options.Proxy.HTTP))
+                }</span>
+                <span class="cov0" title="0">if options.Proxy.HTTPS != "" </span><span class="cov0" title="0">{
+                        env = append(env, fmt.Sprintf("https_proxy=%s", options.Proxy.HTTPS))
+                }</span>
+                <span class="cov0" title="0">cmd.Env = env</span>
+        }
+
+        <span class="cov0" title="0">if err := cmd.Run(); err != nil </span><span class="cov0" title="0">{
+                return errors.Wrap(err, errors.ErrRuntimeCommand, fmt.Sprintf("failed to pull image %s", image))
+        }</span>
+
+        <span class="cov0" title="0">return nil</span>
+}
+
+// Save saves an image to a tar file
+func (p *PodmanRuntime) Save(ctx context.Context, image string, tarPath string) error <span class="cov0" title="0">{
+        cmd := exec.CommandContext(ctx, p.command, "save", "-o", tarPath, image)
+        
+        if err := cmd.Run(); err != nil </span><span class="cov0" title="0">{
+                return errors.Wrap(err, errors.ErrRuntimeCommand, fmt.Sprintf("failed to save image %s to %s", image, tarPath))
+        }</span>
+
+        <span class="cov0" title="0">return nil</span>
+}
+
+// Load loads an image from a tar file
+func (p *PodmanRuntime) Load(ctx context.Context, tarPath string) error <span class="cov0" title="0">{
+        cmd := exec.CommandContext(ctx, p.command, "load", "-i", tarPath)
+        
+        if err := cmd.Run(); err != nil </span><span class="cov0" title="0">{
+                return errors.Wrap(err, errors.ErrRuntimeCommand, fmt.Sprintf("failed to load image from %s", tarPath))
+        }</span>
+
+        <span class="cov0" title="0">return nil</span>
+}
+
+// Push pushes an image to a registry
+func (p *PodmanRuntime) Push(ctx context.Context, image string, options PushOptions) error <span class="cov0" title="0">{
+        cmd := exec.CommandContext(ctx, p.command, "push", image)
+        
+        if err := cmd.Run(); err != nil </span><span class="cov0" title="0">{
+                return errors.Wrap(err, errors.ErrRuntimeCommand, fmt.Sprintf("failed to push image %s", image))
+        }</span>
+
+        <span class="cov0" title="0">return nil</span>
+}
+
+// Tag tags an image with a new name
+func (p *PodmanRuntime) Tag(ctx context.Context, source, target string) error <span class="cov0" title="0">{
+        cmd := exec.CommandContext(ctx, p.command, "tag", source, target)
+        
+        if err := cmd.Run(); err != nil </span><span class="cov0" title="0">{
+                return errors.Wrap(err, errors.ErrRuntimeCommand, fmt.Sprintf("failed to tag image %s as %s", source, target))
+        }</span>
+
+        <span class="cov0" title="0">return nil</span>
+}
+
+// Version returns the Podman version
+func (p *PodmanRuntime) Version() (string, error) <span class="cov0" title="0">{
+        cmd := exec.Command(p.command, "version", "--format", "{{.Version}}")
+        output, err := cmd.Output()
+        if err != nil </span><span class="cov0" title="0">{
+                return "", errors.Wrap(err, errors.ErrRuntimeCommand, "failed to get Podman version")
+        }</span>
+
+        <span class="cov0" title="0">return strings.TrimSpace(string(output)), nil</span>
+}</pre>
+		
+		<pre class="file" id="file9" style="display: none">package version
+
+import (
+        "fmt"
+        "runtime"
+)
+
+// Version information - these will be set by build flags
+var (
+        Version   = "dev"
+        GitCommit = "unknown"
+        BuildDate = "unknown"
+        GoVersion = runtime.Version()
+)
+
+// GetVersion returns the current version
+func GetVersion() string <span class="cov0" title="0">{
+        return Version
+}</span>
+
+// GetShortCommit returns the short commit hash
+func GetShortCommit() string <span class="cov0" title="0">{
+        if len(GitCommit) &gt; 7 </span><span class="cov0" title="0">{
+                return GitCommit[:7]
+        }</span>
+        <span class="cov0" title="0">return GitCommit</span>
+}
+
+// GetFullVersion returns the full version string
+func GetFullVersion() string <span class="cov0" title="0">{
+        if Version == "dev" </span><span class="cov0" title="0">{
+                return fmt.Sprintf("%s-%s", Version, GetShortCommit())
+        }</span>
+        <span class="cov0" title="0">return Version</span>
+}
+
+// PrintVersion prints basic version information
+func PrintVersion() <span class="cov0" title="0">{
+        fmt.Printf("hpn version %s\n", GetFullVersion())
+}</span>
+
+// PrintDetailedVersion prints detailed version information
+func PrintDetailedVersion() <span class="cov0" title="0">{
+        fmt.Printf("hpn version %s\n", GetFullVersion())
+        fmt.Printf("Git commit: %s\n", GitCommit)
+        fmt.Printf("Build date: %s\n", BuildDate)
+        fmt.Printf("Go version: %s\n", GoVersion)
+        fmt.Printf("OS/Arch: %s/%s\n", runtime.GOOS, runtime.GOARCH)
+}</pre>
+		
+		<pre class="file" id="file10" style="display: none">package errors
+
+import (
+        "fmt"
+)
+
+// HarpoonError represents a custom error with additional context
+type HarpoonError struct {
+        Code    ErrorCode              `json:"code"`
+        Message string                 `json:"message"`
+        Cause   error                  `json:"cause,omitempty"`
+        Context map[string]interface{} `json:"context,omitempty"`
+}
+
+// Error implements the error interface
+func (e *HarpoonError) Error() string <span class="cov0" title="0">{
+        if e.Cause != nil </span><span class="cov0" title="0">{
+                return fmt.Sprintf("%s: %v", e.Message, e.Cause)
+        }</span>
+        <span class="cov0" title="0">return e.Message</span>
+}
+
+// Unwrap returns the underlying error
+func (e *HarpoonError) Unwrap() error <span class="cov0" title="0">{
+        return e.Cause
+}</span>
+
+// WithContext adds context to the error
+func (e *HarpoonError) WithContext(key string, value interface{}) *HarpoonError <span class="cov0" title="0">{
+        if e.Context == nil </span><span class="cov0" title="0">{
+                e.Context = make(map[string]interface{})
+        }</span>
+        <span class="cov0" title="0">e.Context[key] = value
+        return e</span>
+}
+
+// ErrorCode represents different types of errors
+type ErrorCode int
+
+const (
+        // Runtime errors
+        ErrRuntimeNotFound ErrorCode = iota + 1000
+        ErrRuntimeUnavailable
+        ErrRuntimeCommand
+
+        // Image errors
+        ErrImageNotFound
+        ErrImageInvalid
+        ErrImageParsing
+
+        // Registry errors
+        ErrRegistryAuth
+        ErrRegistryConnection
+        ErrRegistryTimeout
+
+        // Network errors
+        ErrNetworkTimeout
+        ErrNetworkConnection
+        ErrProxyConnection
+
+        // File system errors
+        ErrInsufficientSpace
+        ErrFileNotFound
+        ErrFilePermission
+        ErrFileOperation
+
+        // Configuration errors
+        ErrInvalidConfig
+        ErrConfigNotFound
+        ErrConfigParsing
+)
+
+// String returns the string representation of the error code
+func (e ErrorCode) String() string <span class="cov0" title="0">{
+        switch e </span>{
+        case ErrRuntimeNotFound:<span class="cov0" title="0">
+                return "RUNTIME_NOT_FOUND"</span>
+        case ErrRuntimeUnavailable:<span class="cov0" title="0">
+                return "RUNTIME_UNAVAILABLE"</span>
+        case ErrRuntimeCommand:<span class="cov0" title="0">
+                return "RUNTIME_COMMAND"</span>
+        case ErrImageNotFound:<span class="cov0" title="0">
+                return "IMAGE_NOT_FOUND"</span>
+        case ErrImageInvalid:<span class="cov0" title="0">
+                return "IMAGE_INVALID"</span>
+        case ErrImageParsing:<span class="cov0" title="0">
+                return "IMAGE_PARSING"</span>
+        case ErrRegistryAuth:<span class="cov0" title="0">
+                return "REGISTRY_AUTH"</span>
+        case ErrRegistryConnection:<span class="cov0" title="0">
+                return "REGISTRY_CONNECTION"</span>
+        case ErrRegistryTimeout:<span class="cov0" title="0">
+                return "REGISTRY_TIMEOUT"</span>
+        case ErrNetworkTimeout:<span class="cov0" title="0">
+                return "NETWORK_TIMEOUT"</span>
+        case ErrNetworkConnection:<span class="cov0" title="0">
+                return "NETWORK_CONNECTION"</span>
+        case ErrProxyConnection:<span class="cov0" title="0">
+                return "PROXY_CONNECTION"</span>
+        case ErrInsufficientSpace:<span class="cov0" title="0">
+                return "INSUFFICIENT_SPACE"</span>
+        case ErrFileNotFound:<span class="cov0" title="0">
+                return "FILE_NOT_FOUND"</span>
+        case ErrFilePermission:<span class="cov0" title="0">
+                return "FILE_PERMISSION"</span>
+        case ErrFileOperation:<span class="cov0" title="0">
+                return "FILE_OPERATION"</span>
+        case ErrInvalidConfig:<span class="cov0" title="0">
+                return "INVALID_CONFIG"</span>
+        case ErrConfigNotFound:<span class="cov0" title="0">
+                return "CONFIG_NOT_FOUND"</span>
+        case ErrConfigParsing:<span class="cov0" title="0">
+                return "CONFIG_PARSING"</span>
+        default:<span class="cov0" title="0">
+                return "UNKNOWN"</span>
+        }
+}
+
+// New creates a new HarpoonError
+func New(code ErrorCode, message string) *HarpoonError <span class="cov0" title="0">{
+        return &amp;HarpoonError{
+                Code:    code,
+                Message: message,
+        }
+}</span>
+
+// Wrap wraps an existing error with additional context
+func Wrap(err error, code ErrorCode, message string) *HarpoonError <span class="cov0" title="0">{
+        return &amp;HarpoonError{
+                Code:    code,
+                Message: message,
+                Cause:   err,
+        }
+}</span>
+
+// Common error constructors
+func NewRuntimeNotFound(runtime string) *HarpoonError <span class="cov0" title="0">{
+        return New(ErrRuntimeNotFound, fmt.Sprintf("container runtime '%s' not found", runtime)).
+                WithContext("runtime", runtime)
+}</span>
+
+func NewImageNotFound(image string) *HarpoonError <span class="cov0" title="0">{
+        return New(ErrImageNotFound, fmt.Sprintf("image '%s' not found", image)).
+                WithContext("image", image)
+}</span>
+
+func NewRegistryAuthError(registry string) *HarpoonError <span class="cov0" title="0">{
+        return New(ErrRegistryAuth, fmt.Sprintf("authentication failed for registry '%s'", registry)).
+                WithContext("registry", registry)
+}</span>
+
+func NewInsufficientSpace(required, available int64) *HarpoonError <span class="cov0" title="0">{
+        return New(ErrInsufficientSpace, fmt.Sprintf("insufficient disk space: required %d bytes, available %d bytes", required, available)).
+                WithContext("required", required).
+                WithContext("available", available)
+}</pre>
+		
+		<pre class="file" id="file11" style="display: none">package types
+
+import (
+        "time"
+
+        "github.com/harpoon/hpn/internal/runtime"
+)
+
+// Config represents the application configuration
+type Config struct {
+        Registry string         `yaml:"registry" json:"registry" mapstructure:"registry"`
+        Project  string         `yaml:"project" json:"project" mapstructure:"project"`
+        Proxy    ProxyConfig    `yaml:"proxy" json:"proxy" mapstructure:"proxy"`
+        Runtime  RuntimeConfig  `yaml:"runtime" json:"runtime" mapstructure:"runtime"`
+        Logging  LoggingConfig  `yaml:"logging" json:"logging" mapstructure:"logging"`
+        Parallel ParallelConfig `yaml:"parallel" json:"parallel" mapstructure:"parallel"`
+        Modes    ModeConfig     `yaml:"modes" json:"modes" mapstructure:"modes"`
+}
+
+// ProxyConfig contains proxy settings
+type ProxyConfig struct {
+        HTTP    string `yaml:"http" json:"http" mapstructure:"http"`
+        HTTPS   string `yaml:"https" json:"https" mapstructure:"https"`
+        Enabled bool   `yaml:"enabled" json:"enabled" mapstructure:"enabled"`
+}
+
+// RuntimeConfig contains container runtime settings
+type RuntimeConfig struct {
+        Preferred    string        `yaml:"preferred" json:"preferred" mapstructure:"preferred"`
+        Timeout      time.Duration `yaml:"timeout" json:"timeout" mapstructure:"timeout"`
+        Retry        RetryConfig   `yaml:"retry" json:"retry" mapstructure:"retry"`
+        AutoFallback bool          `yaml:"auto_fallback" json:"auto_fallback" mapstructure:"auto_fallback"`
+}
+
+// LoggingConfig contains logging settings
+type LoggingConfig struct {
+        Level     string `yaml:"level" json:"level" mapstructure:"level"`
+        Format    string `yaml:"format" json:"format" mapstructure:"format"` // "text" or "json"
+        File      string `yaml:"file" json:"file" mapstructure:"file"`
+        Console   bool   `yaml:"console" json:"console" mapstructure:"console"`
+        Timestamp bool   `yaml:"timestamp" json:"timestamp" mapstructure:"timestamp"`
+        Colors    bool   `yaml:"colors" json:"colors" mapstructure:"colors"`
+}
+
+// ParallelConfig contains parallel processing settings
+type ParallelConfig struct {
+        MaxWorkers int  `yaml:"max_workers" json:"max_workers" mapstructure:"max_workers"`
+        AutoAdjust bool `yaml:"auto_adjust" json:"auto_adjust" mapstructure:"auto_adjust"`
+}
+
+// ModeConfig contains default operation modes
+type ModeConfig struct {
+        SaveMode SaveMode `yaml:"save_mode" json:"save_mode" mapstructure:"save_mode"`
+        LoadMode LoadMode `yaml:"load_mode" json:"load_mode" mapstructure:"load_mode"`
+        PushMode PushMode `yaml:"push_mode" json:"push_mode" mapstructure:"push_mode"`
+}
+
+// RetryConfig contains retry settings
+type RetryConfig struct {
+        MaxAttempts int           `yaml:"max_attempts" json:"max_attempts" mapstructure:"max_attempts"`
+        Delay       time.Duration `yaml:"delay" json:"delay" mapstructure:"delay"`
+        MaxDelay    time.Duration `yaml:"max_delay" json:"max_delay" mapstructure:"max_delay"`
+}
+
+// SaveMode defines how images are saved
+type SaveMode int
+
+const (
+        SaveModeCurrentDir SaveMode = iota + 1 // Save to current directory
+        SaveModeImagesDir                      // Save to ./images/
+        SaveModeProjectDir                     // Save to ./images/&lt;project&gt;/
+)
+
+// LoadMode defines how images are loaded
+type LoadMode int
+
+const (
+        LoadModeCurrentDir LoadMode = iota + 1 // Load from current directory
+        LoadModeImagesDir                      // Load from ./images/
+        LoadModeRecursive                      // Load recursively from ./images/*/
+)
+
+// PushMode defines how images are pushed
+type PushMode int
+
+const (
+        PushModeSimple  PushMode = iota + 1 // registry/image:tag
+        PushModeProject                     // registry/project/image:tag (智能项目名称选择)
+)
+
+// DefaultConfig returns a configuration with default values
+func DefaultConfig() *Config <span class="cov0" title="0">{
+        return &amp;Config{
+                Registry: "registry.k8s.local",
+                Project:  "library",
+                Proxy: ProxyConfig{
+                        Enabled: false,
+                },
+                Runtime: RuntimeConfig{
+                        Preferred:    "",
+                        Timeout:      5 * time.Minute,
+                        AutoFallback: false,
+                        Retry: RetryConfig{
+                                MaxAttempts: 3,
+                                Delay:       time.Second,
+                                MaxDelay:    30 * time.Second,
+                        },
+                },
+                Logging: LoggingConfig{
+                        Level:     "info",
+                        Format:    "text",
+                        Console:   true,
+                        Timestamp: true,
+                        Colors:    true,
+                },
+                Parallel: ParallelConfig{
+                        MaxWorkers: 4,
+                        AutoAdjust: true,
+                },
+                Modes: ModeConfig{
+                        SaveMode: SaveModeCurrentDir,
+                        LoadMode: LoadModeCurrentDir,
+                        PushMode: PushModeSimple,
+                },
+        }
+}</span>
+
+// ToRuntimeProxyConfig converts ProxyConfig to runtime.ProxyConfig
+func (p *ProxyConfig) ToRuntimeProxyConfig() *runtime.ProxyConfig <span class="cov0" title="0">{
+        return &amp;runtime.ProxyConfig{
+                HTTP:    p.HTTP,
+                HTTPS:   p.HTTPS,
+                Enabled: p.Enabled,
+        }
+}</span>
+
+// ToRuntimeRetryConfig converts RetryConfig to runtime.RetryConfig
+func (r *RetryConfig) ToRuntimeRetryConfig() runtime.RetryConfig <span class="cov0" title="0">{
+        return runtime.RetryConfig{
+                MaxAttempts: r.MaxAttempts,
+                Delay:       r.Delay,
+                MaxDelay:    r.MaxDelay,
+        }
+}</pre>
+		
+		<pre class="file" id="file12" style="display: none">package types
+
+import (
+        "fmt"
+        "strings"
+)
+
+// Image represents a container image with its components
+type Image struct {
+        Registry string `json:"registry"`
+        Project  string `json:"project"`
+        Name     string `json:"name"`
+        Tag      string `json:"tag"`
+        FullName string `json:"full_name"`
+        Digest   string `json:"digest,omitempty"`
+        Size     int64  `json:"size,omitempty"`
+}
+
+// String returns the full image name
+func (i *Image) String() string <span class="cov0" title="0">{
+        if i.Project != "" &amp;&amp; i.Project != "library" </span><span class="cov0" title="0">{
+                return fmt.Sprintf("%s/%s/%s:%s", i.Registry, i.Project, i.Name, i.Tag)
+        }</span>
+        <span class="cov0" title="0">if i.Registry != "" &amp;&amp; i.Registry != "docker.io" </span><span class="cov0" title="0">{
+                return fmt.Sprintf("%s/%s:%s", i.Registry, i.Name, i.Tag)
+        }</span>
+        <span class="cov0" title="0">return fmt.Sprintf("%s:%s", i.Name, i.Tag)</span>
+}
+
+// ParseImage parses an image string into an Image struct
+func ParseImage(imageStr string) (*Image, error) <span class="cov0" title="0">{
+        if imageStr == "" </span><span class="cov0" title="0">{
+                return nil, fmt.Errorf("image string cannot be empty")
+        }</span>
+
+        <span class="cov0" title="0">image := &amp;Image{
+                FullName: imageStr,
+        }
+
+        // Split by tag first
+        parts := strings.Split(imageStr, ":")
+        if len(parts) == 1 </span><span class="cov0" title="0">{
+                image.Tag = "latest"
+        }</span> else<span class="cov0" title="0"> {
+                image.Tag = parts[len(parts)-1]
+                imageStr = strings.Join(parts[:len(parts)-1], ":")
+        }</span>
+
+        // Split by registry and path
+        <span class="cov0" title="0">pathParts := strings.Split(imageStr, "/")
+        
+        switch len(pathParts) </span>{
+        case 1:<span class="cov0" title="0">
+                // Simple image name (e.g., "nginx")
+                image.Registry = "docker.io"
+                image.Project = "library"
+                image.Name = pathParts[0]</span>
+        case 2:<span class="cov0" title="0">
+                // Could be registry/image or project/image
+                if strings.Contains(pathParts[0], ".") || strings.Contains(pathParts[0], ":") </span><span class="cov0" title="0">{
+                        // registry/image
+                        image.Registry = pathParts[0]
+                        image.Project = ""
+                        image.Name = pathParts[1]
+                }</span> else<span class="cov0" title="0"> {
+                        // project/image (assume docker.io)
+                        image.Registry = "docker.io"
+                        image.Project = pathParts[0]
+                        image.Name = pathParts[1]
+                }</span>
+        case 3:<span class="cov0" title="0">
+                // registry/project/image
+                image.Registry = pathParts[0]
+                image.Project = pathParts[1]
+                image.Name = pathParts[2]</span>
+        default:<span class="cov0" title="0">
+                // More complex path (registry/nested/project/image)
+                image.Registry = pathParts[0]
+                image.Project = strings.Join(pathParts[1:len(pathParts)-1], "/")
+                image.Name = pathParts[len(pathParts)-1]</span>
+        }
+
+        <span class="cov0" title="0">return image, nil</span>
+}
+
+// GenerateTarFilename generates a tar filename for the image
+func (i *Image) GenerateTarFilename() string <span class="cov0" title="0">{
+        registry := strings.ReplaceAll(i.Registry, ".", "_")
+        registry = strings.ReplaceAll(registry, ":", "_")
+        
+        project := i.Project
+        if project == "" || project == "library" </span><span class="cov0" title="0">{
+                project = "library"
+        }</span>
+        <span class="cov0" title="0">project = strings.ReplaceAll(project, "/", "_")
+        
+        name := strings.ReplaceAll(i.Name, "/", "_")
+        tag := strings.ReplaceAll(i.Tag, ":", "_")
+        
+        return fmt.Sprintf("%s_%s_%s_%s.tar", registry, project, name, tag)</span>
+}</pre>
+		
+		</div>
+	</body>
+	<script>
+	(function() {
+		var files = document.getElementById('files');
+		var visible;
+		files.addEventListener('change', onChange, false);
+		function select(part) {
+			if (visible)
+				visible.style.display = 'none';
+			visible = document.getElementById(part);
+			if (!visible)
+				return;
+			files.value = part;
+			visible.style.display = 'block';
+			location.hash = part;
+		}
+		function onChange() {
+			select(files.value);
+			window.scrollTo(0, 0);
+		}
+		if (location.hash != "") {
+			select(location.hash.substr(1));
+		}
+		if (!visible) {
+			select("file0");
+		}
+	})();
+	</script>
+</html>
