@@ -13,6 +13,7 @@
 - **Smart Runtime Fallback**: Automatic fallback when preferred runtime unavailable
 - **Flexible Operation Modes**: Multiple modes for different deployment scenarios
 - **Cross-Platform**: Linux, macOS, Windows support (AMD64, ARM64)
+- **Wide Compatibility**: Statically linked Linux binaries compatible with RHEL 8.x, RHEL 9.x, Ubuntu, Debian, Alpine, and more
 - **Configuration Management**: YAML-based config with environment variables
 - **Batch Operations**: Efficient bulk image processing
 - **Enterprise Ready**: Proxy support, authentication, private registries
@@ -32,6 +33,23 @@ hpn --version
 ```
 
 For detailed installation instructions, see the [Installation Guide](docs/installation.md).
+
+### System Requirements
+
+**Linux Binaries:**
+- **Statically linked** - No glibc version dependencies
+- Compatible with:
+  - RHEL 8.x (glibc 2.28+)
+  - RHEL 9.x (glibc 2.34+)
+  - Ubuntu 18.04+ (glibc 2.27+)
+  - Debian 10+ (glibc 2.28+)
+  - Alpine Linux (musl)
+  - CentOS 8/Stream
+  - Other modern Linux distributions
+
+**macOS:** macOS 10.14+ (Mojave or later)
+
+**Windows:** Windows 10 or later
 
 ### Basic Usage
 
@@ -157,6 +175,7 @@ We welcome contributions! Please see our [Development Guide](docs/development.md
 - **Simplified Push Modes**: Removed redundant mode, improved smart project selection
 - **Better User Experience**: Concise error messages, parameter validation
 - **Auto-fallback**: Automatic runtime fallback for CI environments
+- **Improved Compatibility**: Statically linked Linux binaries for RHEL 8.x+ compatibility
 
 See the [Changelog](docs/changelog.md) for complete details.
 

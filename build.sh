@@ -24,9 +24,20 @@ case "${1:-current}" in
         echo "Building for all platforms..."
         echo "Version: ${VERSION}, Commit: ${COMMIT}"
         
-        GOOS=linux GOARCH=amd64 go build -ldflags "${LDFLAGS}" -o ${BINARY_NAME}-linux-amd64 ./cmd/hpn
+        # Linux (static build with CGO disabled for RHEL 8.x compatibility)
+        echo "Building Linux (amd64) with CGO_ENABLED=0..."
+        CGO_ENABLED=0 GOOS=linux GOARCH=amd64 go build -tags netgo,osusergo -ldflags "${LDFLAGS}" -o ${BINARY_NAME}-linux-amd64 ./cmd/hpn
+        echo "Building Linux (arm64) with CGO_ENABLED=0..."
+        CGO_ENABLED=0 GOOS=linux GOARCH=arm64 go build -tags netgo,osusergo -ldflags "${LDFLAGS}" -o ${BINARY_NAME}-linux-arm64 ./cmd/hpn
+        
+        # macOS
+        echo "Building macOS (amd64)..."
         GOOS=darwin GOARCH=amd64 go build -ldflags "${LDFLAGS}" -o ${BINARY_NAME}-darwin-amd64 ./cmd/hpn
+        echo "Building macOS (arm64)..."
         GOOS=darwin GOARCH=arm64 go build -ldflags "${LDFLAGS}" -o ${BINARY_NAME}-darwin-arm64 ./cmd/hpn
+        
+        # Windows
+        echo "Building Windows (amd64)..."
         GOOS=windows GOARCH=amd64 go build -ldflags "${LDFLAGS}" -o ${BINARY_NAME}-windows-amd64.exe ./cmd/hpn
         echo "✅ Built all platforms"
         ;;

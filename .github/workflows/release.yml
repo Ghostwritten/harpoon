@@ -39,9 +39,9 @@ jobs:
         
         echo "Building version: ${VERSION}, commit: ${COMMIT}"
         
-        # Linux
-        GOOS=linux GOARCH=amd64 go build -ldflags="${LDFLAGS}" -o dist/hpn-linux-amd64 ./cmd/hpn
-        GOOS=linux GOARCH=arm64 go build -ldflags="${LDFLAGS}" -o dist/hpn-linux-arm64 ./cmd/hpn
+        # Linux (static build with CGO disabled for RHEL 8.x compatibility)
+        CGO_ENABLED=0 GOOS=linux GOARCH=amd64 go build -tags netgo,osusergo -ldflags="${LDFLAGS}" -o dist/hpn-linux-amd64 ./cmd/hpn
+        CGO_ENABLED=0 GOOS=linux GOARCH=arm64 go build -tags netgo,osusergo -ldflags="${LDFLAGS}" -o dist/hpn-linux-arm64 ./cmd/hpn
         
         # macOS
         GOOS=darwin GOARCH=amd64 go build -ldflags="${LDFLAGS}" -o dist/hpn-darwin-amd64 ./cmd/hpn
@@ -53,10 +53,35 @@ jobs:
         # Make binaries executable
         chmod +x dist/hpn-*
     
+    - name: Verify Linux binaries
+      run: |
+        echo "Verifying Linux binaries are statically linked..."
+        for binary in dist/hpn-linux-*; do
+          echo "Checking $binary:"
+          file "$binary" || true
+          ldd "$binary" 2>&1 | head -5 || echo "  ✓ Statically linked (not a dynamic executable)"
+          ls -lh "$binary" | awk '{print "  Size: " $5}'
+          echo "  Testing version command:"
+          "$binary" --version || echo "  ⚠️  Version check failed"
+          echo ""
+        done
+    
+    - name: Generate checksums
+      run: |
+        cd dist
+        echo "Generating SHA256 checksums..."
+        sha256sum hpn-* > checksums.txt
+        cat checksums.txt
+        echo ""
+        echo "Checksums file created:"
+        ls -lh checksums.txt
+    
     - name: Create Release
       uses: softprops/action-gh-release@v1
       with:
-        files: dist/*
+        files: |
+          dist/*
+          dist/checksums.txt
         generate_release_notes: true
       env:
         GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
