@@ -7,6 +7,7 @@ import (
 	"os"
 	"path/filepath"
 	"strings"
+	"sync"
 	"time"
 
 	"github.com/spf13/cobra"
@@ -36,6 +37,7 @@ var (
 	configFile   string
 	runtimeName  string
 	autoFallback bool
+	platform     string
 )
 
 // Global configuration
@@ -89,6 +91,7 @@ func init() {
 	// Runtime flags
 	rootCmd.Flags().StringVar(&runtimeName, "runtime", "", "Container runtime to use (docker|podman|nerdctl)")
 	rootCmd.Flags().BoolVar(&autoFallback, "auto-fallback", false, "Automatically fallback to available runtime")
+	rootCmd.Flags().StringVar(&platform, "platform", "", "Target platform (e.g., linux/amd64, linux/arm64, darwin/arm64)")
 	
 	// Version flags (in addition to --version)
 	rootCmd.Flags().BoolP("version", "v", false, "Show version information")
@@ -117,6 +120,7 @@ Options:
   -c, --config     Config file path
       --runtime    Container runtime: docker | podman | nerdctl
       --auto-fallback  Auto fallback to available runtime
+      --platform   Target platform (e.g., linux/amd64, linux/arm64)
   -v, --version    Show version
   -h, --help       Show help
 
@@ -127,6 +131,7 @@ Modes:
 
 Examples:
   hpn -a pull -f images.txt
+  hpn -a pull -f images.txt --platform linux/amd64
   hpn -a save -f images.txt --save-mode 2
   hpn -a push -f images.txt -r harbor.com -p prod --push-mode 2
   hpn --runtime podman -a pull -f images.txt
@@ -289,27 +294,49 @@ func executePull() error {
 	
 	fmt.Printf("Found %d images to pull\n", len(images))
 	
-	// Pull each image
-	successCount := 0
-	failedImages := []string{}
-	
-	for i, image := range images {
-		fmt.Printf("[%d/%d] Pulling %s...\n", i+1, len(images), image)
-		
-		ctx, cancel := context.WithTimeout(context.Background(), 5*time.Minute)
-		pullOptions := containerruntime.PullOptions{
-			Timeout: 5 * time.Minute,
-		}
-		
-		if err := selectedRuntime.Pull(ctx, image, pullOptions); err != nil {
-			fmt.Printf("❌ Failed to pull %s: %v\n", image, err)
-			failedImages = append(failedImages, image)
-		} else {
-			fmt.Printf("✅ Successfully pulled %s\n", image)
-			successCount++
-		}
-		cancel()
+	// Get configuration values with defaults
+	timeout := 5 * time.Minute
+	if cfg != nil && cfg.Runtime.Timeout > 0 {
+		timeout = cfg.Runtime.Timeout
 	}
+	
+	retryConfig := containerruntime.RetryConfig{
+		MaxAttempts: 3,
+		Delay:       time.Second,
+		MaxDelay:    30 * time.Second,
+	}
+	if cfg != nil {
+		retryConfig = cfg.Runtime.Retry.ToRuntimeRetryConfig()
+	}
+	
+	maxWorkers := 5
+	if cfg != nil && cfg.Parallel.MaxWorkers > 0 {
+		maxWorkers = cfg.Parallel.MaxWorkers
+	}
+	
+	// Show configuration
+	if platform != "" {
+		fmt.Printf("Target platform: %s\n", platform)
+	}
+	fmt.Printf("Timeout: %v, Max retries: %d, Concurrent workers: %d\n", timeout, retryConfig.MaxAttempts, maxWorkers)
+	fmt.Println()
+	
+	// Prepare proxy config
+	var proxyConfig *containerruntime.ProxyConfig
+	if cfg != nil && cfg.Proxy.Enabled {
+		proxyConfig = cfg.Proxy.ToRuntimeProxyConfig()
+	}
+	
+	// Pull images with concurrency and retry
+	successCount, failedImages := pullImagesConcurrent(
+		selectedRuntime,
+		images,
+		platform,
+		timeout,
+		retryConfig,
+		proxyConfig,
+		maxWorkers,
+	)
 	
 	// Print summary
 	fmt.Printf("\nSummary: %d successful, %d failed\n", successCount, len(failedImages))
@@ -323,6 +350,122 @@ func executePull() error {
 	}
 	
 	return nil
+}
+
+// pullImagesConcurrent pulls images concurrently with retry mechanism
+func pullImagesConcurrent(
+	runtime containerruntime.ContainerRuntime,
+	images []string,
+	platform string,
+	timeout time.Duration,
+	retryConfig containerruntime.RetryConfig,
+	proxyConfig *containerruntime.ProxyConfig,
+	maxWorkers int,
+) (int, []string) {
+	type pullResult struct {
+		image string
+		err   error
+	}
+	
+	// Create worker pool
+	jobs := make(chan string, len(images))
+	results := make(chan pullResult, len(images))
+	
+	// Start workers
+	var wg sync.WaitGroup
+	for i := 0; i < maxWorkers && i < len(images); i++ {
+		wg.Add(1)
+		go func() {
+			defer wg.Done()
+			for image := range jobs {
+				err := pullImageWithRetry(runtime, image, platform, timeout, retryConfig, proxyConfig)
+				results <- pullResult{image: image, err: err}
+			}
+		}()
+	}
+	
+	// Send jobs
+	go func() {
+		for _, image := range images {
+			jobs <- image
+		}
+		close(jobs)
+	}()
+	
+	// Wait for all workers to finish
+	go func() {
+		wg.Wait()
+		close(results)
+	}()
+	
+	// Collect results
+	successCount := 0
+	failedImages := []string{}
+	completed := 0
+	
+	for result := range results {
+		completed++
+		if result.err != nil {
+			fmt.Printf("[%d/%d] ❌ Failed to pull %s: %v\n", completed, len(images), result.image, result.err)
+			failedImages = append(failedImages, result.image)
+		} else {
+			fmt.Printf("[%d/%d] ✅ Successfully pulled %s\n", completed, len(images), result.image)
+			successCount++
+		}
+	}
+	
+	return successCount, failedImages
+}
+
+// pullImageWithRetry pulls a single image with retry mechanism
+func pullImageWithRetry(
+	runtime containerruntime.ContainerRuntime,
+	image string,
+	platform string,
+	timeout time.Duration,
+	retryConfig containerruntime.RetryConfig,
+	proxyConfig *containerruntime.ProxyConfig,
+) error {
+	var lastErr error
+	delay := retryConfig.Delay
+	
+	for attempt := 1; attempt <= retryConfig.MaxAttempts; attempt++ {
+		ctx, cancel := context.WithTimeout(context.Background(), timeout)
+		
+		pullOptions := containerruntime.PullOptions{
+			Timeout: timeout,
+			Retry:   retryConfig,
+			Platform: platform,
+			Proxy:   proxyConfig,
+		}
+		
+		err := runtime.Pull(ctx, image, pullOptions)
+		cancel()
+		
+		if err == nil {
+			if attempt > 1 {
+				fmt.Printf("  ✓ Pulled %s after %d attempts\n", image, attempt)
+			}
+			return nil
+		}
+		
+		lastErr = err
+		
+		// Don't retry on last attempt
+		if attempt < retryConfig.MaxAttempts {
+			// Exponential backoff with max delay
+			if delay > retryConfig.MaxDelay {
+				delay = retryConfig.MaxDelay
+			}
+			time.Sleep(delay)
+			delay = time.Duration(float64(delay) * 1.5) // Increase delay by 50%
+			if delay > retryConfig.MaxDelay {
+				delay = retryConfig.MaxDelay
+			}
+		}
+	}
+	
+	return fmt.Errorf("failed after %d attempts: %v", retryConfig.MaxAttempts, lastErr)
 }
 
 func executeSave() error {
