@@ -75,13 +75,31 @@ jobs:
         echo ""
         echo "Checksums file created:"
         ls -lh checksums.txt
+        echo ""
+        echo "All files in dist/:"
+        ls -lh
+    
+    - name: Prepare Release Notes
+      run: |
+        if [ -f "docs/release/v2.0.0.md" ]; then
+          echo "Using docs/release/v2.0.0.md as release body"
+          cp docs/release/v2.0.0.md RELEASE_BODY.md
+        elif [ -f "RELEASE_BODY_v2.0.0.md" ]; then
+          echo "Using RELEASE_BODY_v2.0.0.md as release body"
+          cp RELEASE_BODY_v2.0.0.md RELEASE_BODY.md
+        else
+          echo "No release body file found, will use auto-generated notes"
+        fi
     
     - name: Create Release
       uses: softprops/action-gh-release@v1
       with:
         files: |
-          dist/*
+          dist/hpn-*
           dist/checksums.txt
-        generate_release_notes: true
+        body_path: RELEASE_BODY.md
+        generate_release_notes: false
+        draft: false
+        prerelease: false
       env:
         GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}

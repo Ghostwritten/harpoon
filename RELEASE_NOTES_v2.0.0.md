@@ -1,4 +1,4 @@
-# Harpoon v2.0 Release Notes
+# Harpoon v2.0.0 Release Notes
 
 **Release Date**: January 21, 2025  
 **Version**: v2.0.0
@@ -16,7 +16,7 @@ The new `hpn login` command provides a unified interface for authenticating with
 **Features:**
 - Interactive password input (most secure)
 - Stdin password support for CI/CD pipelines
-- Environment variable support
+- Environment variable support (`REGISTRY_USERNAME`, `REGISTRY_PASSWORD`)
 - Insecure registry support for private environments
 - Automatic runtime detection
 
@@ -62,7 +62,7 @@ Skopeo is now supported as a first-class runtime, enabling daemonless container 
 - **Better Error Messages**: More actionable error messages
 - **Improved Help**: Subcommand-specific help information
 
-## 📋 Breaking Changes
+## ⚠️ Breaking Changes
 
 ### CLI Syntax Changes
 
@@ -96,35 +96,23 @@ paths:
 
 ## 🔄 Migration Guide
 
-For detailed migration instructions, see the [Migration Guide](changelog.md#migration-guide) in the changelog.
+For detailed migration instructions, see the [Migration Guide](https://github.com/Ghostwritten/harpoon/blob/main/docs/changelog.md#migration-guide) in the changelog.
 
-## 📦 Installation
+## 📦 Downloads
 
-### Download Pre-built Binaries
-
-Download the latest release from [GitHub Releases](https://github.com/Ghostwritten/harpoon/releases/tag/v2.0):
-
-- **Linux AMD64**: `hpn-linux-amd64`
-- **Linux ARM64**: `hpn-linux-arm64`
-- **macOS Intel**: `hpn-darwin-amd64`
-- **macOS Apple Silicon**: `hpn-darwin-arm64`
-- **Windows AMD64**: `hpn-windows-amd64.exe`
-
-### Build from Source
-
-```bash
-git clone https://github.com/Ghostwritten/harpoon.git
-cd harpoon
-make build-all
-```
+- **Linux AMD64**: [hpn-linux-amd64](https://github.com/Ghostwritten/harpoon/releases/download/v2.0.0/hpn-linux-amd64)
+- **Linux ARM64**: [hpn-linux-arm64](https://github.com/Ghostwritten/harpoon/releases/download/v2.0.0/hpn-linux-arm64)
+- **macOS Intel**: [hpn-darwin-amd64](https://github.com/Ghostwritten/harpoon/releases/download/v2.0.0/hpn-darwin-amd64)
+- **macOS Apple Silicon**: [hpn-darwin-arm64](https://github.com/Ghostwritten/harpoon/releases/download/v2.0.0/hpn-darwin-arm64)
+- **Windows AMD64**: [hpn-windows-amd64.exe](https://github.com/Ghostwritten/harpoon/releases/download/v2.0.0/hpn-windows-amd64.exe)
 
 ## 📚 Documentation
 
-- [Quick Start Guide](quickstart.md)
-- [Installation Guide](installation.md)
-- [Configuration Guide](configuration.md)
-- [Examples](examples.md)
-- [Changelog](changelog.md)
+- [Quick Start Guide](https://github.com/Ghostwritten/harpoon/blob/main/docs/quickstart.md)
+- [Installation Guide](https://github.com/Ghostwritten/harpoon/blob/main/docs/installation.md)
+- [Configuration Guide](https://github.com/Ghostwritten/harpoon/blob/main/docs/configuration.md)
+- [Examples](https://github.com/Ghostwritten/harpoon/blob/main/docs/examples.md)
+- [Full Changelog](https://github.com/Ghostwritten/harpoon/blob/main/docs/changelog.md)
 
 ## 🙏 Acknowledgments
 
@@ -138,4 +126,4 @@ Thank you to all contributors and users who provided feedback and helped improve
 
 ---
 
-For the complete list of changes, see the [Changelog](changelog.md).
+For the complete list of changes, see the [Changelog](https://github.com/Ghostwritten/harpoon/blob/main/docs/changelog.md#v20---2025-01-21).
