@@ -17,6 +17,10 @@ hpn-*
 dist/
 build/
 
+# Legacy build artifacts (root directory)
+hpn
+hpn-*
+
 # Go workspace file
 go.work
 

@@ -38,7 +38,7 @@ func ValidateConfig(cfg *types.Config) error {
 		return err
 	}
 
-	if err := validateModeConfig(&cfg.Modes); err != nil {
+	if err := validatePathConfig(&cfg.Paths); err != nil {
 		return err
 	}
 
@@ -217,24 +217,38 @@ func validateParallelConfig(parallel *types.ParallelConfig) error {
 	return nil
 }
 
-// validateModeConfig validates operation mode configuration
-func validateModeConfig(modes *types.ModeConfig) error {
-	if modes.SaveMode < 1 || modes.SaveMode > 3 {
-		return errors.New(errors.ErrInvalidConfig, "save mode must be 1, 2, or 3")
+// validatePathConfig validates path configuration
+// Note: This function does NOT create directories, it only validates that the path
+// is valid and the parent directory is writable. Directories should be created
+// when actually used, not during configuration validation.
+func validatePathConfig(paths *types.PathConfig) error {
+	if paths.SavePath != "" {
+		// Only validate parent directory exists and is writable
+		// Don't create the path itself - it will be created when used
+		parentDir := filepath.Dir(paths.SavePath)
+		if parentDir != "." && parentDir != paths.SavePath {
+			if err := validateDirectoryExists(parentDir); err != nil {
+				return errors.Wrap(err, errors.ErrInvalidConfig, "invalid save path parent directory")
+			}
+		}
 	}
 
-	if modes.LoadMode < 1 || modes.LoadMode > 3 {
-		return errors.New(errors.ErrInvalidConfig, "load mode must be 1, 2, or 3")
-	}
-
-	if modes.PushMode < 1 || modes.PushMode > 3 {
-		return errors.New(errors.ErrInvalidConfig, "push mode must be 1, 2, or 3")
+	if paths.LoadPath != "" {
+		// Only validate parent directory exists and is writable
+		// Don't create the path itself - it will be created when used
+		parentDir := filepath.Dir(paths.LoadPath)
+		if parentDir != "." && parentDir != paths.LoadPath {
+			if err := validateDirectoryExists(parentDir); err != nil {
+				return errors.Wrap(err, errors.ErrInvalidConfig, "invalid load path parent directory")
+			}
+		}
 	}
 
 	return nil
 }
 
 // validateDirectory checks if a directory exists and is writable
+// This function will create the directory if it doesn't exist (used for log file directories)
 func validateDirectory(dir string) error {
 	info, err := os.Stat(dir)
 	if err != nil {
@@ -244,6 +258,33 @@ func validateDirectory(dir string) error {
 				return fmt.Errorf("cannot create directory: %v", err)
 			}
 			return nil
+		}
+		return fmt.Errorf("cannot access directory: %v", err)
+	}
+
+	if !info.IsDir() {
+		return fmt.Errorf("path is not a directory")
+	}
+
+	// Test write permission by creating a temporary file
+	tempFile := filepath.Join(dir, ".hpn_write_test")
+	f, err := os.Create(tempFile)
+	if err != nil {
+		return fmt.Errorf("directory is not writable: %v", err)
+	}
+	f.Close()
+	os.Remove(tempFile)
+
+	return nil
+}
+
+// validateDirectoryExists checks if a directory exists and is writable
+// This function does NOT create the directory - it only validates existing directories
+func validateDirectoryExists(dir string) error {
+	info, err := os.Stat(dir)
+	if err != nil {
+		if os.IsNotExist(err) {
+			return fmt.Errorf("directory does not exist: %s", dir)
 		}
 		return fmt.Errorf("cannot access directory: %v", err)
 	}

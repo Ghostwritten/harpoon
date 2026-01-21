@@ -14,7 +14,7 @@ type Config struct {
 	Runtime  RuntimeConfig  `yaml:"runtime" json:"runtime" mapstructure:"runtime"`
 	Logging  LoggingConfig  `yaml:"logging" json:"logging" mapstructure:"logging"`
 	Parallel ParallelConfig `yaml:"parallel" json:"parallel" mapstructure:"parallel"`
-	Modes    ModeConfig     `yaml:"modes" json:"modes" mapstructure:"modes"`
+	Paths    PathConfig     `yaml:"paths" json:"paths" mapstructure:"paths"`
 }
 
 // ProxyConfig contains proxy settings
@@ -48,11 +48,10 @@ type ParallelConfig struct {
 	AutoAdjust bool `yaml:"auto_adjust" json:"auto_adjust" mapstructure:"auto_adjust"`
 }
 
-// ModeConfig contains default operation modes
-type ModeConfig struct {
-	SaveMode SaveMode `yaml:"save_mode" json:"save_mode" mapstructure:"save_mode"`
-	LoadMode LoadMode `yaml:"load_mode" json:"load_mode" mapstructure:"load_mode"`
-	PushMode PushMode `yaml:"push_mode" json:"push_mode" mapstructure:"push_mode"`
+// PathConfig contains default paths for operations
+type PathConfig struct {
+	SavePath string `yaml:"save_path" json:"save_path" mapstructure:"save_path"`
+	LoadPath string `yaml:"load_path" json:"load_path" mapstructure:"load_path"`
 }
 
 // RetryConfig contains retry settings
@@ -61,32 +60,6 @@ type RetryConfig struct {
 	Delay       time.Duration `yaml:"delay" json:"delay" mapstructure:"delay"`
 	MaxDelay    time.Duration `yaml:"max_delay" json:"max_delay" mapstructure:"max_delay"`
 }
-
-// SaveMode defines how images are saved
-type SaveMode int
-
-const (
-	SaveModeCurrentDir SaveMode = iota + 1 // Save to current directory
-	SaveModeImagesDir                      // Save to ./images/
-	SaveModeProjectDir                     // Save to ./images/<project>/
-)
-
-// LoadMode defines how images are loaded
-type LoadMode int
-
-const (
-	LoadModeCurrentDir LoadMode = iota + 1 // Load from current directory
-	LoadModeImagesDir                      // Load from ./images/
-	LoadModeRecursive                      // Load recursively from ./images/*/
-)
-
-// PushMode defines how images are pushed
-type PushMode int
-
-const (
-	PushModeSimple  PushMode = iota + 1 // registry/image:tag
-	PushModeProject                     // registry/project/image:tag (智能项目名称选择)
-)
 
 // DefaultConfig returns a configuration with default values
 func DefaultConfig() *Config {
@@ -117,10 +90,9 @@ func DefaultConfig() *Config {
 			MaxWorkers: 4,
 			AutoAdjust: true,
 		},
-		Modes: ModeConfig{
-			SaveMode: SaveModeCurrentDir,
-			LoadMode: LoadModeCurrentDir,
-			PushMode: PushModeSimple,
+		Paths: PathConfig{
+			SavePath: "./images",
+			LoadPath: "./images",
 		},
 	}
 }

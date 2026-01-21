@@ -36,8 +36,7 @@ parallel:
   max_workers: 5     # maximum concurrent operations
   auto_adjust: true  # automatically adjust based on system resources
 
-# Default operation modes
-modes:
-  save_mode: 1       # 1=current dir, 2=./images/, 3=./images/<project>/
-  load_mode: 1       # 1=current dir, 2=./images/, 3=recursive ./images/*/
-  push_mode: 1       # 1=registry/image:tag, 2=registry/project/image:tag (智能项目名称选择)
+# Default paths for save and load operations
+paths:
+  save_path: ./images  # Default directory for saving images (tar files)
+  load_path: ./images  # Default directory for loading images (tar files)

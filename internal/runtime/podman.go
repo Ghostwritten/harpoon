@@ -1,8 +1,10 @@
 package runtime
 
 import (
+	"bytes"
 	"context"
 	"fmt"
+	"io"
 	"os"
 	"os/exec"
 	"strings"
@@ -47,7 +49,7 @@ func (p *PodmanRuntime) Pull(ctx context.Context, image string, options PullOpti
 	args := []string{"pull"}
 
 	// Add platform if specified
-	if options.Platform != "" {
+	if options.Platform != "" && options.Platform != "all" {
 		args = append(args, "--platform", options.Platform)
 	}
 
@@ -67,19 +69,59 @@ func (p *PodmanRuntime) Pull(ctx context.Context, image string, options PullOpti
 		cmd.Env = env
 	}
 
-	if err := cmd.Run(); err != nil {
-		return errors.Wrap(err, errors.ErrRuntimeCommand, fmt.Sprintf("failed to pull image %s", image))
+	// Capture output for debug mode
+	var stdout, stderr bytes.Buffer
+	if options.Debug {
+		cmd.Stdout = io.MultiWriter(os.Stdout, &stdout)
+		cmd.Stderr = io.MultiWriter(os.Stderr, &stderr)
+	} else {
+		// In non-debug mode, still show progress but capture errors
+		cmd.Stdout = os.Stdout
+		cmd.Stderr = &stderr
+	}
+
+	err := cmd.Run()
+	if err != nil {
+		errMsg := fmt.Sprintf("failed to pull image %s", image)
+		if options.Debug && (stdout.Len() > 0 || stderr.Len() > 0) {
+			errMsg += fmt.Sprintf("\nStdout:\n%s\nStderr:\n%s", stdout.String(), stderr.String())
+		} else if stderr.Len() > 0 {
+			errMsg += fmt.Sprintf("\nError: %s", stderr.String())
+		}
+		return errors.Wrap(err, errors.ErrRuntimeCommand, errMsg)
 	}
 
 	return nil
 }
 
 // Save saves an image to a tar file
-func (p *PodmanRuntime) Save(ctx context.Context, image string, tarPath string) error {
+func (p *PodmanRuntime) Save(ctx context.Context, image string, tarPath string, options SaveOptions) error {
 	cmd := exec.CommandContext(ctx, p.command, "save", "-o", tarPath, image)
 	
+	// Capture output for debug mode
+	var stdout, stderr bytes.Buffer
+	if options.Debug {
+		cmd.Stdout = io.MultiWriter(os.Stdout, &stdout)
+		cmd.Stderr = io.MultiWriter(os.Stderr, &stderr)
+	} else {
+		cmd.Stderr = &stderr
+	}
+	
 	if err := cmd.Run(); err != nil {
-		return errors.Wrap(err, errors.ErrRuntimeCommand, fmt.Sprintf("failed to save image %s to %s", image, tarPath))
+		errMsg := fmt.Sprintf("failed to save image %s to %s", image, tarPath)
+		if options.Debug && (stdout.Len() > 0 || stderr.Len() > 0) {
+			errMsg += fmt.Sprintf("\nStdout:\n%s\nStderr:\n%s", stdout.String(), stderr.String())
+		} else if stderr.Len() > 0 {
+			errMsg += fmt.Sprintf("\nError: %s", stderr.String())
+		}
+		return errors.Wrap(err, errors.ErrRuntimeCommand, errMsg)
+	}
+
+	// Generate checksum file if requested (default: true)
+	if options.Checksum {
+		if _, err := generateChecksum(tarPath); err != nil {
+			return errors.Wrap(err, errors.ErrRuntimeCommand, fmt.Sprintf("failed to generate checksum for %s", tarPath))
+		}
 	}
 
 	return nil
@@ -100,8 +142,24 @@ func (p *PodmanRuntime) Load(ctx context.Context, tarPath string) error {
 func (p *PodmanRuntime) Push(ctx context.Context, image string, options PushOptions) error {
 	cmd := exec.CommandContext(ctx, p.command, "push", image)
 	
+	// Capture output for debug mode
+	var stdout, stderr bytes.Buffer
+	if options.Debug {
+		cmd.Stdout = io.MultiWriter(os.Stdout, &stdout)
+		cmd.Stderr = io.MultiWriter(os.Stderr, &stderr)
+	} else {
+		cmd.Stdout = os.Stdout
+		cmd.Stderr = &stderr
+	}
+	
 	if err := cmd.Run(); err != nil {
-		return errors.Wrap(err, errors.ErrRuntimeCommand, fmt.Sprintf("failed to push image %s", image))
+		errMsg := fmt.Sprintf("failed to push image %s", image)
+		if options.Debug && (stdout.Len() > 0 || stderr.Len() > 0) {
+			errMsg += fmt.Sprintf("\nStdout:\n%s\nStderr:\n%s", stdout.String(), stderr.String())
+		} else if stderr.Len() > 0 {
+			errMsg += fmt.Sprintf("\nError: %s", stderr.String())
+		}
+		return errors.Wrap(err, errors.ErrRuntimeCommand, errMsg)
 	}
 
 	return nil
@@ -113,6 +171,58 @@ func (p *PodmanRuntime) Tag(ctx context.Context, source, target string) error {
 	
 	if err := cmd.Run(); err != nil {
 		return errors.Wrap(err, errors.ErrRuntimeCommand, fmt.Sprintf("failed to tag image %s as %s", source, target))
+	}
+
+	return nil
+}
+
+// Login logs in to a container registry
+func (p *PodmanRuntime) Login(ctx context.Context, registry string, options LoginOptions) error {
+	args := []string{"login"}
+
+	if options.Username != "" {
+		args = append(args, "-u", options.Username)
+	}
+
+	if options.PasswordStdin {
+		args = append(args, "--password-stdin")
+	} else if options.Password != "" {
+		args = append(args, "-p", options.Password)
+	}
+
+	if options.Insecure {
+		args = append(args, "--tls-verify=false")
+	}
+
+	args = append(args, registry)
+
+	cmd := exec.CommandContext(ctx, p.command, args...)
+
+	// 如果使用 --password-stdin，从 stdin 读取密码
+	if options.PasswordStdin && options.Password != "" {
+		cmd.Stdin = strings.NewReader(options.Password)
+	}
+
+	// Capture output for debug mode
+	var stdout, stderr bytes.Buffer
+	if options.Debug {
+		cmd.Stdout = io.MultiWriter(os.Stdout, &stdout)
+		cmd.Stderr = io.MultiWriter(os.Stderr, &stderr)
+	} else {
+		// In non-debug mode, show output but capture errors
+		cmd.Stdout = os.Stdout
+		cmd.Stderr = &stderr
+	}
+
+	err := cmd.Run()
+	if err != nil {
+		errMsg := fmt.Sprintf("failed to login to registry %s", registry)
+		if options.Debug && (stdout.Len() > 0 || stderr.Len() > 0) {
+			errMsg += fmt.Sprintf("\nStdout:\n%s\nStderr:\n%s", stdout.String(), stderr.String())
+		} else if stderr.Len() > 0 {
+			errMsg += fmt.Sprintf("\nError: %s", stderr.String())
+		}
+		return errors.Wrap(err, errors.ErrRuntimeCommand, errMsg)
 	}
 
 	return nil

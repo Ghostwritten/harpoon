@@ -71,7 +71,8 @@ gh release download --repo 你的用户名/harpoon
 
 ```bash
 # 一键安装 (Linux/macOS)
-curl -sSL https://raw.githubusercontent.com/你的用户名/harpoon/main/install.sh | bash
+# Download directly from GitHub Releases (recommended)
+# See the download section above for direct download commands
 ```
 
 ## 📦 包管理器支持 (未来)

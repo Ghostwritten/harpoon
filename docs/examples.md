@@ -16,19 +16,19 @@ postgres:15-alpine
 EOF
 
 # Pull images
-hpn -a pull -f web-images.txt
+hpn pull -f web-images.txt
 
 # Save to ./images/ directory
-hpn -a save -f web-images.txt --save-mode 2
+hpn save -f web-images.txt --path ./images
 ```
 
 #### Load and Push Images
 ```bash
 # Load images from ./images/
-hpn -a load --load-mode 2
+hpn load --path ./images
 
 # Push to private registry
-hpn -a push -f web-images.txt -r harbor.company.com -p production --push-mode 2
+hpn push -f web-images.txt --registry harbor.company.com --project production --project production
 ```
 
 ### Configuration-based Workflow
@@ -38,16 +38,15 @@ mkdir -p ~/.hpn
 cat > ~/.hpn/config.yaml << EOF
 registry: harbor.company.com
 project: production
-modes:
-  save_mode: 2
-  load_mode: 2
-  push_mode: 2
+paths:
+  save_path: ./images
+  load_path: ./images
 EOF
 
 # Use with default settings
-hpn -a pull -f web-images.txt
-hpn -a save -f web-images.txt
-hpn -a push -f web-images.txt
+hpn pull -f web-images.txt
+hpn save -f web-images.txt
+hpn push -f web-images.txt
 ```
 
 ## Development Workflows
@@ -66,16 +65,16 @@ redis:7-alpine
 EOF
 
 # Pull development images
-hpn -a pull -f dev-images.txt
+hpn pull -f dev-images.txt
 
 # Save for offline development
-hpn -a save -f dev-images.txt --save-mode 2
+hpn save -f dev-images.txt --path ./images
 ```
 
 #### Offline Development
 ```bash
 # On machine without internet
-hpn -a load --load-mode 2
+hpn load --path ./images
 
 # Verify images are available
 docker images | grep -E "(node|python|golang|mysql|redis)"
@@ -102,10 +101,10 @@ cache:v1.0.5
 EOF
 
 # Deploy to production
-hpn -a push -f prod-images.txt -r harbor.company.com -p production --push-mode 2
+hpn push -f prod-images.txt --registry harbor.company.com --project production --project production
 
 # Deploy to staging
-hpn -a push -f staging-images.txt -r harbor.company.com -p staging --push-mode 2
+hpn push -f staging-images.txt --registry harbor.company.com --project staging --project production
 ```
 
 ## CI/CD Integration
@@ -138,7 +137,7 @@ jobs:
     
     - name: Deploy images
       run: |
-        hpn --auto-fallback -a push -f production-images.txt -r harbor.company.com -p production --push-mode 2
+        hpn --auto-fallback -a push -f production-images.txt --registry harbor.company.com --project production --project production
 ```
 
 #### Multi-stage Pipeline
@@ -157,7 +156,7 @@ jobs:
     steps:
     - name: Deploy to staging
       run: |
-        hpn -a push -f images.txt -r harbor.company.com -p staging --push-mode 2
+        hpn push -f images.txt --registry harbor.company.com --project staging --project production
   
   deploy-production:
     if: github.ref == 'refs/heads/main'
@@ -165,7 +164,7 @@ jobs:
     steps:
     - name: Deploy to production
       run: |
-        hpn -a push -f images.txt -r harbor.company.com -p production --push-mode 2
+        hpn push -f images.txt --registry harbor.company.com --project production --project production
 ```
 
 ### Jenkins Integration
@@ -183,13 +182,13 @@ pipeline {
     stages {
         stage('Pull Images') {
             steps {
-                sh 'hpn -a pull -f production-images.txt'
+                sh 'hpn pull -f production-images.txt'
             }
         }
         
         stage('Save Images') {
             steps {
-                sh 'hpn -a save -f production-images.txt --save-mode 2'
+                sh 'hpn save -f production-images.txt --path ./images'
                 archiveArtifacts artifacts: 'images/*.tar', fingerprint: true
             }
         }
@@ -201,7 +200,7 @@ pipeline {
             steps {
                 withCredentials([usernamePassword(credentialsId: 'harbor-creds', usernameVariable: 'USER', passwordVariable: 'PASS')]) {
                     sh 'echo $PASS | docker login $REGISTRY -u $USER --password-stdin'
-                    sh 'hpn -a push -f production-images.txt -r $REGISTRY -p $PROJECT --push-mode 2'
+                    sh 'hpn push -f production-images.txt --registry $REGISTRY --project $PROJECT --project production'
                 }
             }
         }
@@ -244,7 +243,7 @@ runtime:
   auto_fallback: true
 EOF
 
-hpn -a pull -f images.txt
+hpn pull -f images.txt
 ```
 
 ## Advanced Use Cases
@@ -261,10 +260,10 @@ library/postgres:latest
 EOF
 
 # Pull from Docker Hub
-hpn -a pull -f dockerhub-images.txt
+hpn pull -f dockerhub-images.txt
 
 # Push to private registry (preserves original project structure)
-hpn -a push -f dockerhub-images.txt -r harbor.company.com --push-mode 2
+hpn push -f dockerhub-images.txt --registry harbor.company.com --project production
 ```
 
 #### Cross-registry Migration
@@ -281,13 +280,13 @@ PROJECT="migrated"
 sed "s|^|${SOURCE_REGISTRY}/|" base-images.txt > source-images.txt
 
 # Pull from source
-hpn -a pull -f source-images.txt
+hpn pull -f source-images.txt
 
 # Create target image list
 sed "s|${SOURCE_REGISTRY}/|${TARGET_REGISTRY}/${PROJECT}/|" source-images.txt > target-images.txt
 
 # Push to target
-hpn -a push -f target-images.txt -r $TARGET_REGISTRY -p $PROJECT --push-mode 2
+hpn push -f target-images.txt --registry $TARGET_REGISTRY --project $PROJECT --project production
 ```
 
 ### Kubernetes Integration
@@ -298,7 +297,7 @@ hpn -a push -f target-images.txt -r $TARGET_REGISTRY -p $PROJECT --push-mode 2
 kubectl get pods -o jsonpath='{.items[*].spec.containers[*].image}' | tr ' ' '\n' | sort -u > k8s-images.txt
 
 # Pre-pull images on nodes
-hpn -a pull -f k8s-images.txt
+hpn pull -f k8s-images.txt
 ```
 
 #### Helm Chart Images
@@ -307,8 +306,8 @@ hpn -a pull -f k8s-images.txt
 helm template my-app ./chart | grep -oP 'image:\s*\K[^"]*' | sort -u > helm-images.txt
 
 # Pull and save for air-gapped deployment
-hpn -a pull -f helm-images.txt
-hpn -a save -f helm-images.txt --save-mode 2
+hpn pull -f helm-images.txt
+hpn save -f helm-images.txt --path ./images
 ```
 
 ### Air-gapped Environments
@@ -324,8 +323,8 @@ app:v1.0.0
 EOF
 
 # Pull and save
-hpn -a pull -f airgap-images.txt
-hpn -a save -f airgap-images.txt --save-mode 2
+hpn pull -f airgap-images.txt
+hpn save -f airgap-images.txt --path ./images
 
 # Create archive
 tar -czf airgap-images.tar.gz images/
@@ -337,10 +336,10 @@ tar -czf airgap-images.tar.gz images/
 tar -xzf airgap-images.tar.gz
 
 # Load images
-hpn -a load --load-mode 2
+hpn load --path ./images
 
 # Push to local registry
-hpn -a push -f airgap-images.txt -r localhost:5000 -p apps --push-mode 2
+hpn push -f airgap-images.txt --registry localhost:5000 --project apps --project production
 ```
 
 ## Automation Scripts
@@ -362,10 +361,10 @@ for registry in "${REGISTRIES[@]}"; do
             echo "Processing $image_list for $registry/$project"
             
             # Pull images
-            hpn -a pull -f "$image_list"
+            hpn pull -f "$image_list"
             
             # Push to registry/project
-            hpn -a push -f "$image_list" -r "$registry" -p "$project" --push-mode 2
+            hpn push -f "$image_list" --registry "$registry" --project "$project" --project production
             
             echo "Completed $image_list for $registry/$project"
         done
@@ -383,8 +382,8 @@ REGISTRY="harbor.company.com"
 PROJECT="production"
 
 # Check if images exist in registry
-while IFS= read -r image; do
-    if hpn -a pull -f <(echo "$image") 2>/dev/null; then
+while IFS= read --registry image; do
+    if hpn pull -f <(echo "$image") 2>/dev/null; then
         echo "✓ $image is available"
     else
         echo "✗ $image is missing - pulling and pushing"
@@ -393,7 +392,7 @@ while IFS= read -r image; do
         docker pull "$image"
         
         # Push to registry
-        echo "$image" | hpn -a push -f - -r "$REGISTRY" -p "$PROJECT" --push-mode 2
+        echo "$image" | hpn push -f - --registry "$REGISTRY" --project "$PROJECT" --project production
     fi
 done < "$IMAGE_LIST"
 ```
@@ -434,7 +433,7 @@ runtime:
 EOF
 
 # Process large image list
-hpn -a pull -f large-image-list.txt
+hpn pull -f large-image-list.txt
 ```
 
 ### Network Optimization
@@ -447,9 +446,9 @@ proxy:
 EOF
 
 # Batch operations
-hpn -a pull -f batch1.txt
-hpn -a pull -f batch2.txt
-hpn -a pull -f batch3.txt
+hpn pull -f batch1.txt
+hpn pull -f batch2.txt
+hpn pull -f batch3.txt
 ```
 
 ## Troubleshooting Examples
@@ -458,7 +457,7 @@ hpn -a pull -f batch3.txt
 ```bash
 # Enable debug logging
 export HPN_LOG_LEVEL=debug
-hpn -a pull -f images.txt 2>&1 | tee debug.log
+hpn pull -f images.txt 2>&1 | tee debug.log
 
 # Analyze debug output
 grep -i error debug.log
@@ -482,11 +481,11 @@ nerdctl version
 # Test with proxy
 export http_proxy=http://proxy:8080
 export https_proxy=http://proxy:8080
-hpn -a pull -f images.txt
+hpn pull -f images.txt
 
 # Test without proxy
 unset http_proxy https_proxy
-hpn -a pull -f images.txt
+hpn pull -f images.txt
 ```
 
 ## See Also

@@ -5,6 +5,186 @@ All notable changes to Harpoon (hpn) will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [v2.0] - 2025-01-21
+
+### 🎉 Major Release Highlights
+
+This release introduces a major CLI architecture refactoring, adds unified registry authentication, integrates Skopeo support, and includes numerous improvements for better usability and maintainability.
+
+### Added
+
+#### Authentication & Security
+- **Login Command**: New `hpn login` subcommand for unified registry authentication
+  - Supports Docker, Podman, Skopeo, and Nerdctl runtimes
+  - Interactive password input (most secure, hidden input)
+  - Stdin password support for CI/CD pipelines (`--password-stdin`)
+  - Environment variable support (`REGISTRY_USERNAME`, `REGISTRY_PASSWORD`)
+  - Insecure registry support (`--insecure` flag for HTTP or self-signed certificates)
+  - Automatic runtime detection or manual specification via `--runtime`
+- **Authentication Utilities**: New `internal/runtime/auth.go` for managing authentication files
+  - Support for Docker (`~/.docker/config.json`) and Podman/Skopeo (`~/.config/containers/auth.json`)
+  - Automatic authentication file path detection based on runtime
+  - Secure credential storage with proper file permissions (0600)
+
+#### Runtime Support
+- **Skopeo Integration**: Added Skopeo as a new container runtime option
+  - Full support for pull, save, load, and push operations
+  - Daemonless image operations (no Docker daemon required)
+  - Multi-architecture image support
+  - Automatic detection and fallback support
+
+#### Developer Experience
+- **Debug Mode**: Added `--debug` flag for detailed troubleshooting
+  - Shows full stdout/stderr from underlying container commands
+  - Enhanced error messages with detailed context
+  - Useful for diagnosing runtime issues
+- **Progress Bars**: Visual progress indicators for long-running operations
+  - Real-time progress display for pull, save, load, and push operations
+  - Multi-bar support for concurrent operations
+  - Automatic terminal width detection and formatting
+
+#### Build System
+- **Makefile**: Added Makefile wrapper for build.sh
+  - `make build` - Build for current platform
+  - `make build-all` - Build for all platforms
+  - `make clean` - Clean build artifacts
+  - `make test` - Run tests
+  - `make install` - Install to /usr/local/bin
+- **Standardized Build Output**: All binaries now output to `dist/` directory
+  - Follows industry-standard project structure
+  - Cleaner project root directory
+  - Better organization of build artifacts
+
+### Changed
+
+#### BREAKING: CLI Architecture Refactoring
+- **Subcommand-based CLI**: Refactored from action-based to subcommand-based architecture
+  - Removed `-a, --action` parameter
+  - Commands now use subcommands: `hpn pull`, `hpn save`, `hpn load`, `hpn push`, `hpn login`
+  - Follows industry standards (similar to docker, kubectl)
+  - Better command discovery and help organization
+- **Parameter Simplification**: Removed all `--*-mode` parameters
+  - Removed `--save-mode`, `--load-mode`, `--push-mode`
+  - Save/Load operations now use `--path` parameter (default: `./images`)
+  - Save operation supports multi-level paths (e.g., `--path ./output/images/prod`)
+  - Load operation supports `--recursive` flag for recursive loading
+  - Push operation uses flexible naming with three intuitive modes:
+    - Default: preserve original paths (`--registry new-registry.com`)
+    - Append path: prepend path to original (`--registry new-registry.com/path/xx`)
+    - Unified project: all images to single project (`--registry new-registry.com --project newproject`)
+- **Parameter Scoping**: Command-specific parameters now scoped to their subcommands
+  - Push-specific parameters (`--registry`, `--project`) only visible in `hpn push -h`
+  - Cleaner root command help output
+  - Better parameter organization
+
+#### BREAKING: Configuration Structure
+- **Configuration Schema Update**: Removed `modes` section, added `paths` section
+  - Removed `modes.save_mode`, `modes.load_mode`, `modes.push_mode`
+  - Added `paths.save_path` and `paths.load_path` fields
+  - Default paths: `./images` for both save and load
+  - More intuitive and flexible configuration
+
+### Improved
+
+- **CLI User Experience**: 
+  - Clearer command structure with subcommands
+  - More intuitive parameter organization
+  - Enhanced help information with subcommand-specific parameters
+  - Better error messages with actionable suggestions
+- **Image Pull Strategy**:
+  - Retry mechanism with exponential backoff
+  - Configurable concurrency with worker pools
+  - Platform parameter support (`--platform linux/amd64`, `linux/arm64`, `all`)
+  - Timeout optimization for better reliability
+- **File Operations**:
+  - SHA256 checksum generation for saved tar files
+  - Resume support: skip re-saving if valid tar and checksum files exist
+  - Multi-level path support for better organization
+- **Project Structure**:
+  - Reorganized documentation (moved RELEASE.md, DOWNLOAD.md to docs/)
+  - Removed unnecessary files (install.sh, demo/, benchmarks/)
+  - Cleaner project root directory
+  - Better separation of concerns
+
+### Fixed
+
+- Fixed empty `images` directory creation when custom `--path` is specified
+- Fixed Skopeo save operation platform issues on macOS
+- Improved configuration validation to prevent unnecessary directory creation
+- Enhanced error handling for missing runtime dependencies
+
+### Removed
+
+- Removed `install.sh` script (users can download directly from GitHub Releases)
+- Removed `demo/` directory (examples integrated into documentation)
+- Removed `benchmarks/` directory (not needed for CLI tool)
+- Removed `scripts/performance-analysis.sh` (depended on benchmarks)
+
+### Migration Guide
+
+#### Command Syntax Changes
+
+**Pull Operations:**
+```bash
+# Old
+hpn -a pull -f images.txt
+
+# New
+hpn pull -f images.txt
+```
+
+**Save Operations:**
+```bash
+# Old
+hpn -a save -f images.txt --save-mode 2
+
+# New
+hpn save -f images.txt --path ./images
+```
+
+**Load Operations:**
+```bash
+# Old
+hpn -a load --load-mode 2
+
+# New
+hpn load --path ./images
+```
+
+**Push Operations:**
+```bash
+# Old
+hpn -a push -f images.txt -r registry.com --push-mode 2
+
+# New
+hpn push -f images.txt --registry registry.com --project project
+```
+
+#### Configuration File Changes
+
+**Old config.yaml:**
+```yaml
+modes:
+  save_mode: 2
+  load_mode: 2
+  push_mode: 2
+```
+
+**New config.yaml:**
+```yaml
+paths:
+  save_path: ./images
+  load_path: ./images
+```
+
+### Documentation
+
+- Updated all documentation to reflect new CLI syntax
+- Added comprehensive migration guide
+- Updated examples and quick start guide
+- Added login command documentation
+- Updated building guide with Makefile instructions
+
 ## [v1.1] - 2024-12-19
 
 ### Added

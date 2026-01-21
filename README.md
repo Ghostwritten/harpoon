@@ -9,14 +9,15 @@
 
 ## ✨ Features
 
-- **Multi-Runtime Support**: Docker, Podman, Nerdctl with automatic detection
+- **Multi-Runtime Support**: Docker, Podman, Nerdctl, Skopeo with automatic detection
 - **Smart Runtime Fallback**: Automatic fallback when preferred runtime unavailable
 - **Flexible Operation Modes**: Multiple modes for different deployment scenarios
 - **Cross-Platform**: Linux, macOS, Windows support (AMD64, ARM64)
 - **Wide Compatibility**: Statically linked Linux binaries compatible with RHEL 8.x, RHEL 9.x, Ubuntu, Debian, Alpine, and more
 - **Configuration Management**: YAML-based config with environment variables
 - **Batch Operations**: Efficient bulk image processing
-- **Enterprise Ready**: Proxy support, authentication, private registries
+- **Enterprise Ready**: Proxy support, unified authentication, private registries
+- **Secure Authentication**: Interactive password input, stdin support, environment variables
 
 ## 🚀 Quick Start
 
@@ -58,17 +59,30 @@ For detailed installation instructions, see the [Installation Guide](docs/instal
 echo "nginx:latest" > images.txt
 echo "alpine:3.18" >> images.txt
 
+# Login to registry (interactive, most secure)
+hpn login harbor.company.com
+
+# Login with credentials (for CI/CD, use --password-stdin)
+hpn login harbor.company.com -u admin -p password
+echo "password" | hpn login harbor.company.com -u admin --password-stdin
+
+# Login to insecure registry (HTTP or self-signed certificate)
+hpn login http://registry.local -u admin -p password --insecure
+
 # Pull images
-hpn -a pull -f images.txt
+hpn pull -f images.txt
 
 # Save to tar files
-hpn -a save -f images.txt --save-mode 2
+hpn save -f images.txt --path ./images
 
 # Load from tar files
-hpn -a load --load-mode 2
+hpn load --path ./images
 
-# Push to registry with smart project selection
-hpn -a push -f images.txt -r harbor.company.com --push-mode 2
+# Push to registry (preserve original paths)
+hpn push -f images.txt --registry harbor.company.com
+
+# Push to registry with unified project
+hpn push -f images.txt --registry harbor.company.com --project production
 ```
 
 ## 📖 Documentation
@@ -83,6 +97,7 @@ hpn -a push -f images.txt -r harbor.company.com --push-mode 2
 - [🏗️ Architecture](docs/architecture.md) - System architecture and design
 - [🐳 Runtime Support](docs/runtime-support.md) - Container runtime compatibility
 - [🔒 Security Guide](docs/security.md) - Security best practices
+- [🔨 Building Guide](docs/building.md) - Build from source and cross-compilation
 - [🛠️ Development Guide](docs/development.md) - Contributing and development
 
 ### Reference & Support
@@ -101,22 +116,48 @@ hpn -a push -f images.txt -r harbor.company.com --push-mode 2
 ### Smart Runtime Management
 ```bash
 # Auto-detect available runtime
-hpn -a pull -f images.txt
+hpn pull -f images.txt
 
 # Specify runtime explicitly
-hpn --runtime podman -a pull -f images.txt
+hpn --runtime podman pull -f images.txt
 
 # Auto-fallback for CI/CD
-hpn --auto-fallback -a pull -f images.txt
+hpn --auto-fallback pull -f images.txt
 ```
 
-### Flexible Push Modes
+### Registry Authentication
 ```bash
-# Simple push: registry/image:tag
-hpn -a push -f images.txt -r harbor.com --push-mode 1
+# Interactive login (most secure, password hidden)
+hpn login harbor.company.com
 
-# Smart project selection: registry/project/image:tag
-hpn -a push -f images.txt -r harbor.com -p production --push-mode 2
+# Login with parameters
+hpn login harbor.company.com -u admin -p password
+
+# Login from stdin (for CI/CD scripts)
+echo "password" | hpn login harbor.company.com -u admin --password-stdin
+
+# Login using environment variables
+export REGISTRY_USERNAME=admin
+export REGISTRY_PASSWORD=password
+hpn login harbor.company.com
+
+# Login to insecure registry (HTTP or self-signed certificate)
+hpn login http://registry.local -u admin -p password --insecure
+
+# Specify runtime for login
+hpn login harbor.company.com -u admin -p password --runtime podman
+```
+
+### Flexible Push Options
+```bash
+# Preserve original paths: registry/project/image:tag
+hpn push -f images.txt --registry harbor.com
+
+# Unified project: all images to registry/project/image:tag
+hpn push -f images.txt --registry harbor.com --project production
+
+# Append path: registry/path/xx/project/image:tag
+hpn push -f images.txt --registry harbor.com/path/xx
 ```
 
 ### Configuration
@@ -131,8 +172,9 @@ project: production
 runtime:
   preferred: docker
   auto_fallback: true
-modes:
-  push_mode: 2
+paths:
+  save_path: ./images
+  load_path: ./images
 EOF
 ```
 
@@ -145,14 +187,16 @@ git clone https://github.com/your-org/harpoon.git
 cd harpoon
 
 # Build for current platform
-make build
+./build.sh current
 
 # Build for all platforms
-make build-all
+./build.sh all
 
-# Run development tests
-make dev-test
+# Run tests
+go test ./...
 ```
+
+For detailed build instructions, see the [Building Guide](docs/building.md).
 
 ### Contributing
 We welcome contributions! Please see our [Development Guide](docs/development.md) for:

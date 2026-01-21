@@ -17,7 +17,7 @@ type ContainerRuntime interface {
 	Pull(ctx context.Context, image string, options PullOptions) error
 	
 	// Save saves an image to a tar file
-	Save(ctx context.Context, image string, tarPath string) error
+	Save(ctx context.Context, image string, tarPath string, options SaveOptions) error
 	
 	// Load loads an image from a tar file
 	Load(ctx context.Context, tarPath string) error
@@ -27,6 +27,9 @@ type ContainerRuntime interface {
 	
 	// Tag tags an image with a new name
 	Tag(ctx context.Context, source, target string) error
+	
+	// Login logs in to a container registry
+	Login(ctx context.Context, registry string, options LoginOptions) error
 	
 	// Version returns the runtime version
 	Version() (string, error)
@@ -38,12 +41,32 @@ type PullOptions struct {
 	Retry     RetryConfig
 	Timeout   time.Duration
 	Platform  string
+	MultiArch bool // When Platform == "all", set to true
+	Debug     bool // Enable debug mode to show detailed output
+}
+
+// SaveOptions contains options for save operations
+type SaveOptions struct {
+	Checksum  bool   // Whether to generate checksum file (default: true)
+	MultiArch bool   // Whether to save all architectures (only for Skopeo, when Platform == "all")
+	Platform  string // Target platform (e.g., linux/amd64, linux/arm64). If empty, defaults to linux/amd64 for Skopeo
+	Debug     bool   // Enable debug mode to show detailed output
 }
 
 // PushOptions contains options for push operations
 type PushOptions struct {
 	Timeout time.Duration
 	Retry   RetryConfig
+	Debug   bool // Enable debug mode to show detailed output
+}
+
+// LoginOptions contains options for login operations
+type LoginOptions struct {
+	Username      string // 用户名
+	Password      string // 密码（从 stdin 或环境变量读取）
+	PasswordStdin bool   // 是否从 stdin 读取密码
+	Insecure      bool   // 是否允许非安全连接（HTTP 或自签名证书）
+	Debug         bool   // 是否启用 debug 模式
 }
 
 // ProxyConfig contains proxy configuration

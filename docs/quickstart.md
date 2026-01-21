@@ -17,7 +17,7 @@ sudo mv hpn /usr/local/bin/
 git clone https://github.com/your-org/harpoon.git
 cd harpoon
 make build
-sudo cp hpn /usr/local/bin/
+sudo cp dist/hpn /usr/local/bin/
 ```
 
 ### Verify Installation
@@ -36,37 +36,53 @@ echo "alpine:3.18" >> images.txt
 
 Pull images:
 ```bash
-hpn -a pull -f images.txt
+hpn pull -f images.txt
 ```
 
 ### 2. Save Images
 Save images to tar files:
 ```bash
-# Save to current directory
-hpn -a save -f images.txt --save-mode 1
+# Save to default directory (./images)
+hpn save -f images.txt
 
-# Save to ./images/ directory
-hpn -a save -f images.txt --save-mode 2
+# Save to custom directory
+hpn save -f images.txt --path ./output/images
 ```
 
 ### 3. Load Images
 Load images from tar files:
 ```bash
-# Load from current directory
-hpn -a load --load-mode 1
+# Load from default directory (./images)
+hpn load
 
-# Load from ./images/ directory
-hpn -a load --load-mode 2
+# Load from custom directory
+hpn load --path ./images
+
+# Load recursively from subdirectories
+hpn load --path ./images --recursive
 ```
 
 ### 4. Push Images
 Push images to a registry:
 ```bash
-# Simple push
-hpn -a push -f images.txt -r harbor.company.com --push-mode 1
+# Preserve original paths
+hpn push -f images.txt --registry harbor.company.com
 
-# Push with project namespace
-hpn -a push -f images.txt -r harbor.company.com -p production --push-mode 2
+# Push with unified project namespace
+hpn push -f images.txt --registry harbor.company.com --project production
+```
+
+### 5. Login to Registry
+Login to a container registry:
+```bash
+# Interactive login (most secure)
+hpn login harbor.company.com
+
+# Login with credentials
+hpn login harbor.company.com -u admin -p password
+
+# Login from stdin (for CI/CD)
+echo "password" | hpn login harbor.company.com -u admin --password-stdin
 ```
 
 ## Configuration
@@ -80,10 +96,9 @@ project: production
 runtime:
   preferred: docker
   auto_fallback: true
-modes:
-  save_mode: 2
-  load_mode: 2
-  push_mode: 2
+paths:
+  save_path: ./images
+  load_path: ./images
 EOF
 ```
 
@@ -99,45 +114,45 @@ export HPN_RUNTIME_PREFERRED=docker
 ### Development Workflow
 ```bash
 # Pull development images
-hpn -a pull -f dev-images.txt
+hpn pull -f dev-images.txt
 
 # Save for offline use
-hpn -a save -f dev-images.txt --save-mode 2
+hpn save -f dev-images.txt --path ./images
 
 # Load on another machine
-hpn -a load --load-mode 2
+hpn load --path ./images
 ```
 
 ### CI/CD Pipeline
 ```bash
 # Build and push in CI
-hpn --auto-fallback -a push -f production-images.txt -r harbor.company.com -p production --push-mode 2
+hpn --auto-fallback push -f production-images.txt --registry harbor.company.com --project production
 ```
 
 ### Image Migration
 ```bash
 # Migrate from Docker Hub to private registry
-hpn -a push -f dockerhub-images.txt -r harbor.company.com --push-mode 2
+hpn push -f dockerhub-images.txt --registry harbor.company.com --project production
 ```
 
 ## Runtime Selection
 
 ### Auto-detection (Default)
 ```bash
-hpn -a pull -f images.txt
+hpn pull -f images.txt
 # Automatically detects and uses available runtime
 ```
 
 ### Specify Runtime
 ```bash
 # Use Docker
-hpn --runtime docker -a pull -f images.txt
+hpn --runtime docker pull -f images.txt
 
 # Use Podman
-hpn --runtime podman -a pull -f images.txt
+hpn --runtime podman pull -f images.txt
 
 # Auto-fallback mode
-hpn --auto-fallback -a pull -f images.txt
+hpn --auto-fallback pull -f images.txt
 ```
 
 ## Troubleshooting
@@ -162,6 +177,8 @@ Error: authentication failed
 ```
 Solution: Login to registry first
 ```bash
+hpn login harbor.company.com
+# Or use the native runtime command
 docker login harbor.company.com
 ```
 

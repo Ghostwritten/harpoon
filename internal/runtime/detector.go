@@ -29,6 +29,7 @@ func (d *Detector) DetectAvailable() []ContainerRuntime {
 		NewDockerRuntime(),
 		NewPodmanRuntime(),
 		NewNerdctlRuntime(),
+		NewSkopeoRuntime(),
 	}
 
 	// Check availability and store
@@ -39,12 +40,13 @@ func (d *Detector) DetectAvailable() []ContainerRuntime {
 		}
 	}
 
-	// Sort by priority (Docker > Podman > Nerdctl)
+	// Sort by priority (Docker > Podman > Nerdctl > Skopeo)
 	sort.Slice(available, func(i, j int) bool {
 		priority := map[string]int{
 			"docker":  1,
 			"podman":  2,
 			"nerdctl": 3,
+			"skopeo":  4,
 		}
 		return priority[available[i].Name()] < priority[available[j].Name()]
 	})
