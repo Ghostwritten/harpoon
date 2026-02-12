@@ -24,12 +24,20 @@ type ProxyConfig struct {
 	Enabled bool   `yaml:"enabled" json:"enabled" mapstructure:"enabled"`
 }
 
+// RuntimeExtraArgs defines passthrough args per command for the underlying runtime
+type RuntimeExtraArgs struct {
+	Pull []string `yaml:"pull" json:"pull" mapstructure:"pull"`
+	Save []string `yaml:"save" json:"save" mapstructure:"save"`
+	Push []string `yaml:"push" json:"push" mapstructure:"push"`
+}
+
 // RuntimeConfig contains container runtime settings
 type RuntimeConfig struct {
-	Preferred    string        `yaml:"preferred" json:"preferred" mapstructure:"preferred"`
-	Timeout      time.Duration `yaml:"timeout" json:"timeout" mapstructure:"timeout"`
-	Retry        RetryConfig   `yaml:"retry" json:"retry" mapstructure:"retry"`
-	AutoFallback bool          `yaml:"auto_fallback" json:"auto_fallback" mapstructure:"auto_fallback"`
+	Preferred    string             `yaml:"preferred" json:"preferred" mapstructure:"preferred"`
+	Timeout      time.Duration      `yaml:"timeout" json:"timeout" mapstructure:"timeout"`
+	Retry        RetryConfig        `yaml:"retry" json:"retry" mapstructure:"retry"`
+	AutoFallback bool               `yaml:"auto_fallback" json:"auto_fallback" mapstructure:"auto_fallback"`
+	ExtraArgs    *RuntimeExtraArgs  `yaml:"extra_args" json:"extra_args" mapstructure:"extra_args"`
 }
 
 // LoggingConfig contains logging settings
@@ -87,7 +95,7 @@ func DefaultConfig() *Config {
 			Colors:    true,
 		},
 		Parallel: ParallelConfig{
-			MaxWorkers: 4,
+			MaxWorkers: 5,
 			AutoAdjust: true,
 		},
 		Paths: PathConfig{

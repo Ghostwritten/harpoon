@@ -1,9 +1,9 @@
 # Harpoon (hpn) 🎯
 
 [![License](https://img.shields.io/badge/license-MIT-blue.svg)](LICENSE)
-[![Go Version](https://img.shields.io/badge/go-1.21+-blue.svg)](https://golang.org)
-[![Version](https://img.shields.io/badge/version-v1.1-green.svg)](https://github.com/your-org/harpoon/releases)
-[![Build Status](https://github.com/your-org/harpoon/workflows/Enhanced%20Testing/badge.svg)](https://github.com/your-org/harpoon/actions)
+[![Go Version](https://img.shields.io/badge/go-1.22+-blue.svg)](https://golang.org)
+[![Version](https://img.shields.io/badge/version-v2.0.1-green.svg)](https://github.com/Ghostwritten/harpoon/releases)
+[![Build Status](https://github.com/Ghostwritten/harpoon/workflows/Test/badge.svg)](https://github.com/Ghostwritten/harpoon/actions)
 
 **Harpoon** is a modern, efficient container image management CLI tool written in Go. It provides powerful operations for pulling, saving, loading, and pushing container images with support for multiple container runtimes and flexible operation modes.
 
@@ -16,6 +16,7 @@
 - **Wide Compatibility**: Statically linked Linux binaries compatible with RHEL 8.x, RHEL 9.x, Ubuntu, Debian, Alpine, and more
 - **Configuration Management**: YAML-based config with environment variables
 - **Batch Operations**: Efficient bulk image processing
+- **Helm Chart Image List**: Extract image list from Helm charts (`list-images`) for offline or CI use
 - **Enterprise Ready**: Proxy support, unified authentication, private registries
 - **Secure Authentication**: Interactive password input, stdin support, environment variables
 
@@ -25,7 +26,7 @@
 
 ```bash
 # Download and install (Linux/macOS)
-curl -L https://github.com/your-org/harpoon/releases/latest/download/hpn-linux-amd64 -o hpn
+curl -L https://github.com/Ghostwritten/harpoon/releases/latest/download/hpn-linux-amd64 -o hpn
 chmod +x hpn
 sudo mv hpn /usr/local/bin/
 
@@ -83,6 +84,15 @@ hpn push -f images.txt --registry harbor.company.com
 
 # Push to registry with unified project
 hpn push -f images.txt --registry harbor.company.com --project production
+
+# Get image list from a Helm chart (requires Helm CLI), then pull
+hpn list-images --chart bitnami/nginx --version 15.0.0 -o images.txt
+hpn pull -f images.txt
+
+# List images: runtime, path, or check file
+hpn ls                              # List local runtime images
+hpn ls --path ./images              # List saved tar files
+hpn ls -f images.txt                # Check images.txt against runtime
 ```
 
 ## 📖 Documentation
@@ -90,26 +100,16 @@ hpn push -f images.txt --registry harbor.company.com --project production
 ### Essential Guides
 - [📚 Quick Start Guide](docs/quickstart.md) - Get up and running in minutes
 - [⚙️ Installation Guide](docs/installation.md) - Detailed installation instructions
-- [📖 User Guide](docs/user-guide.md) - Complete usage guide
-- [🔧 Configuration Guide](docs/configuration.md) - Configuration options and examples
+- [💡 Examples](docs/examples.md) - Real-world usage examples
 
 ### Advanced Topics
-- [🏗️ Architecture](docs/architecture.md) - System architecture and design
-- [🐳 Runtime Support](docs/runtime-support.md) - Container runtime compatibility
-- [🔒 Security Guide](docs/security.md) - Security best practices
 - [🔨 Building Guide](docs/building.md) - Build from source and cross-compilation
-- [🛠️ Development Guide](docs/development.md) - Contributing and development
-
-### Reference & Support
-- [📋 API Reference](docs/api-reference.md) - Command-line interface reference
-- [💡 Examples](docs/examples.md) - Real-world usage examples
-- [❓ FAQ](docs/faq.md) - Frequently asked questions
-- [🔍 Troubleshooting](docs/troubleshooting.md) - Common issues and solutions
+- [🔄 Concurrency](docs/concurrency.md) - Workers and parallel operations
+- [📦 Skopeo: Images](docs/skopeo-images.md) - Viewing and cleaning Skopeo images
+- [📥 Skopeo: Pull vs Save](docs/skopeo-pull-vs-save.md) - Pull vs save behavior with Skopeo
 
 ### Release Information
 - [📝 Changelog](docs/changelog.md) - Version history and changes
-- [🚀 Release Notes](docs/release-notes.md) - Latest release information
-- [⬆️ Upgrade Guide](docs/upgrade-guide.md) - Version upgrade instructions
 
 ## 🎯 Key Features
 
@@ -160,6 +160,20 @@ hpn push -f images.txt --registry harbor.com --project production
 hpn push -f images.txt --registry harbor.com/path/xx
 ```
 
+### Passthrough to Underlying Runtime
+You can pass extra flags to the underlying runtime (docker/podman/nerdctl/skopeo) by putting them after `--`. Config file can also set `runtime.extra_args.pull`, `runtime.extra_args.save`, and `runtime.extra_args.push`.
+
+```bash
+# Example: skip TLS verify when pulling (podman/skopeo)
+hpn pull -f images.txt -- --tls-verify=false
+
+# Example: pass through to save/push
+hpn save -f images.txt -- --tls-verify=false
+hpn push -f images.txt --registry harbor.com -- --tls-verify=false
+```
+
+Interpretation of passthrough args is done by the underlying tool; see each runtime's documentation for valid options.
+
 ### Configuration
 ```bash
 # Create config directory
@@ -183,7 +197,7 @@ EOF
 ### Building from Source
 ```bash
 # Clone repository
-git clone https://github.com/your-org/harpoon.git
+git clone https://github.com/Ghostwritten/harpoon.git
 cd harpoon
 
 # Build for current platform
@@ -199,11 +213,7 @@ go test ./...
 For detailed build instructions, see the [Building Guide](docs/building.md).
 
 ### Contributing
-We welcome contributions! Please see our [Development Guide](docs/development.md) for:
-- Setting up development environment
-- Building and testing
-- Submitting pull requests
-- Code style guidelines
+We welcome contributions! Please see the [Building Guide](docs/building.md) for building and testing, and the [Changelog](docs/changelog.md) for version history.
 
 ## 💼 Use Cases
 
@@ -213,22 +223,20 @@ We welcome contributions! Please see our [Development Guide](docs/development.md
 - **CI/CD Pipelines**: Automated image operations
 - **Development Workflows**: Local image management
 
-## 🆕 What's New in v1.1
+## 🆕 What's New in v2.0.1
 
-- **Enhanced Runtime Support**: New `--runtime` parameter and smart detection
-- **Simplified Push Modes**: Removed redundant mode, improved smart project selection
-- **Better User Experience**: Concise error messages, parameter validation
-- **Auto-fallback**: Automatic runtime fallback for CI environments
-- **Improved Compatibility**: Statically linked Linux binaries for RHEL 8.x+ compatibility
+- **list-images**: Extract image list from Helm charts (remote or local) for `hpn pull -f` / `hpn push -f`; requires [Helm](https://helm.sh) CLI
+- **ls** (alias `list`): List runtime images, list tar files in `--path` with SIZE/CHECKSUM, or check `-f` list against runtime/path
+- **rmi**: Remove images from a file in local runtime (Docker/Podman/Nerdctl); passthrough e.g. `-- -f` for force
+- **Improved**: Chart image extraction filters out URLs, metric names, and socket paths to reduce false positives
 
 See the [Changelog](docs/changelog.md) for complete details.
 
 ## 🤝 Community & Support
 
-- **Documentation**: [docs/](docs/) - Comprehensive guides and references
-- **Issues**: [GitHub Issues](https://github.com/your-org/harpoon/issues) - Bug reports and feature requests
-- **Discussions**: [GitHub Discussions](https://github.com/your-org/harpoon/discussions) - Community discussions
-- **Contributing**: [Development Guide](docs/development.md) - How to contribute
+- **Documentation**: [docs/](docs/) - Guides and references
+- **Issues**: [GitHub Issues](https://github.com/Ghostwritten/harpoon/issues) - Bug reports and feature requests
+- **Contributing**: [Building Guide](docs/building.md) - Build and test; [Changelog](docs/changelog.md) - Version history
 
 ## 📜 License
 

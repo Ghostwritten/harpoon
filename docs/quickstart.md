@@ -62,7 +62,21 @@ hpn load --path ./images
 hpn load --path ./images --recursive
 ```
 
-### 4. Push Images
+### 4. List Images
+Three modes:
+```bash
+# List images in local runtime (docker/podman/nerdctl)
+hpn ls
+
+# List saved tar files in path (IMAGE, SIZE, CHECKSUM)
+hpn ls --path ./images
+
+# Check images.txt against runtime or path
+hpn ls -f images.txt
+hpn ls -f images.txt --path ./images
+```
+
+### 5. Push Images
 Push images to a registry:
 ```bash
 # Preserve original paths
@@ -72,7 +86,9 @@ hpn push -f images.txt --registry harbor.company.com
 hpn push -f images.txt --registry harbor.company.com --project production
 ```
 
-### 5. Login to Registry
+You can pass extra flags to the underlying runtime (docker/podman/nerdctl/skopeo) after `--`, e.g. `hpn pull -f images.txt -- --tls-verify=false`.
+
+### 6. Login to Registry
 Login to a container registry:
 ```bash
 # Interactive login (most secure)

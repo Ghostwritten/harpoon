@@ -49,6 +49,40 @@ hpn save -f web-images.txt
 hpn push -f web-images.txt
 ```
 
+### Passthrough Args (pull / save / push)
+Pass extra flags to the underlying runtime by placing them after `--`. You can also set `runtime.extra_args` in config.
+
+```bash
+# Insecure registry or self-signed cert (e.g. podman/skopeo)
+hpn pull -f images.txt -- --tls-verify=false
+hpn push -f images.txt --registry harbor.company.com -- --tls-verify=false
+```
+
+Interpretation of these args is up to the underlying tool (docker/podman/nerdctl/skopeo).
+
+### Get Image List from Helm Chart
+
+Extract image references from a Helm chart (remote or local) and use the list with pull/save/push. Requires [Helm](https://helm.sh) CLI to be installed.
+
+```bash
+# From a remote chart (repo/name + version)
+hpn list-images --chart bitnami/nginx --version 15.0.0 -o images.txt
+hpn pull -f images.txt
+hpn save -f images.txt --path ./images
+
+# From a local chart directory or .tgz
+hpn list-images --chart ./mychart -o images.txt
+hpn list-images --chart ./mychart-1.0.0.tgz -f values-prod.yaml -o images.txt
+
+# With custom values files (passed to helm template)
+hpn list-images --chart bitnami/nginx --version 15.0.0 -f values.yaml -f prod.yaml -o images.txt
+
+# Write to stdout (e.g. pipe to pull)
+hpn list-images --chart ./mychart -o - | hpn pull -f /dev/stdin
+```
+
+Output is one image per line, compatible with `hpn pull -f` and `hpn push -f`.
+
 ## Development Workflows
 
 ### Local Development Setup
@@ -137,7 +171,7 @@ jobs:
     
     - name: Deploy images
       run: |
-        hpn --auto-fallback -a push -f production-images.txt --registry harbor.company.com --project production --project production
+        hpn --auto-fallback push -f production-images.txt --registry harbor.company.com --project production --project production
 ```
 
 #### Multi-stage Pipeline
@@ -213,28 +247,28 @@ pipeline {
 ### Docker Environment
 ```bash
 # Ensure Docker is used
-hpn --runtime docker -a pull -f images.txt
+hpn --runtime docker pull -f images.txt
 
 # With custom Docker configuration
 export DOCKER_HOST=tcp://docker.company.com:2376
-hpn --runtime docker -a pull -f images.txt
+hpn --runtime docker pull -f images.txt
 ```
 
 ### Podman Environment
 ```bash
 # Use Podman (rootless)
-hpn --runtime podman -a pull -f images.txt
+hpn --runtime podman pull -f images.txt
 
 # With Podman socket
 systemctl --user start podman.socket
 export DOCKER_HOST=unix:///run/user/$(id -u)/podman/podman.sock
-hpn --runtime podman -a pull -f images.txt
+hpn --runtime podman pull -f images.txt
 ```
 
 ### Mixed Environment
 ```bash
 # Auto-detect and fallback
-hpn --auto-fallback -a pull -f images.txt
+hpn --auto-fallback pull -f images.txt
 
 # With configuration
 cat > ~/.hpn/config.yaml << EOF
@@ -467,8 +501,8 @@ grep -i timeout debug.log
 ### Runtime Issues
 ```bash
 # Test different runtimes
-hpn --runtime docker -a pull -f test-image.txt
-hpn --runtime podman -a pull -f test-image.txt
+hpn --runtime docker pull -f test-image.txt
+hpn --runtime podman pull -f test-image.txt
 
 # Check runtime availability
 docker version

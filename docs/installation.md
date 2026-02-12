@@ -1,32 +1,33 @@
-# 安装
+# Installation
 
-## 下载二进制文件
+## Download binaries
 
-从 [GitHub Releases](https://github.com/your-org/harpoon/releases/latest) 下载对应平台的二进制文件：
+Download the binary for your platform from [GitHub Releases](https://github.com/Ghostwritten/harpoon/releases/latest):
 
-### Linux/macOS
+### Linux / macOS
+
 ```bash
-# 下载并安装
-curl -L https://github.com/your-org/harpoon/releases/latest/download/hpn-linux-amd64 -o hpn
+curl -L https://github.com/Ghostwritten/harpoon/releases/latest/download/hpn-linux-amd64 -o hpn
 chmod +x hpn
 sudo mv hpn /usr/local/bin/
 ```
 
 ### Windows
-下载 `hpn-windows-amd64.exe` 并添加到 PATH。
 
-## 从源码构建
+Download `hpn-windows-amd64.exe` and add it to your PATH.
+
+## Build from source
 
 ```bash
-git clone https://github.com/your-org/harpoon.git
+git clone https://github.com/Ghostwritten/harpoon.git
 cd harpoon
 go build -o hpn ./cmd/hpn
 ```
 
-## 验证安装
+## Verify installation
 
 ```bash
 hpn --version
 ```
 
-需要安装 Docker、Podman 或 Nerdctl 中的至少一个容器运行时。
+At least one container runtime (Docker, Podman, or Nerdctl) must be installed. For `list-images`, [Helm](https://helm.sh) is also required.

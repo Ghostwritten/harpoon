@@ -59,6 +59,9 @@ func (s *SkopeoRuntime) Pull(ctx context.Context, image string, options PullOpti
 		args = append(args, "--override-os", extractOS(options.Platform))
 	}
 
+	if len(options.ExtraArgs) > 0 {
+		args = append(args, options.ExtraArgs...)
+	}
 	// Source: docker://image
 	args = append(args, fmt.Sprintf("docker://%s", image))
 	
@@ -111,6 +114,26 @@ func (s *SkopeoRuntime) Pull(ctx context.Context, image string, options PullOpti
 
 // Save saves an image to a tar file using docker-archive format
 func (s *SkopeoRuntime) Save(ctx context.Context, image string, tarPath string, options SaveOptions) error {
+	// First, try docker-archive format (default, most compatible)
+	err := s.saveWithDockerArchive(ctx, image, tarPath, options)
+	if err == nil {
+		return nil
+	}
+
+	// Check if error is due to OCI manifest type
+	errStr := err.Error()
+	if strings.Contains(errStr, "Unsupported manifest type") || 
+	   strings.Contains(errStr, "need a Docker schema 2 manifest") {
+		// Fallback: use oci format (dir), then pack to tar
+		return s.saveWithOCIDir(ctx, image, tarPath, options)
+	}
+
+	// Return original error if not OCI manifest related
+	return err
+}
+
+// saveWithDockerArchive saves image using docker-archive format
+func (s *SkopeoRuntime) saveWithDockerArchive(ctx context.Context, image string, tarPath string, options SaveOptions) error {
 	args := []string{"copy", "--preserve-digests"}
 
 	// Add --all flag for multi-arch support
@@ -131,25 +154,31 @@ func (s *SkopeoRuntime) Save(ctx context.Context, image string, tarPath string, 
 		}
 	}
 
+	if len(options.ExtraArgs) > 0 {
+		args = append(args, options.ExtraArgs...)
+	}
 	// Source: docker://image
 	args = append(args, fmt.Sprintf("docker://%s", image))
 	
-	// Destination: docker-archive:tarPath
+	// Destination: docker-archive:tarPath (default format, most compatible)
 	args = append(args, fmt.Sprintf("docker-archive:%s", tarPath))
 
 	cmd := exec.CommandContext(ctx, s.command, args...)
 
-	// Set proxy environment if configured (we need to get proxy from context or options)
-	// For now, we'll use environment variables if set
+	// Set proxy environment if configured
 	env := os.Environ()
 	cmd.Env = env
 
-	// Capture output for debug mode
+	// For Skopeo, show progress output in non-debug mode too
+	// Skopeo copy shows useful progress information (copying layers, etc.)
 	var stdout, stderr bytes.Buffer
 	if options.Debug {
+		// Debug mode: show all output
 		cmd.Stdout = io.MultiWriter(os.Stdout, &stdout)
 		cmd.Stderr = io.MultiWriter(os.Stderr, &stderr)
 	} else {
+		// Non-debug mode: show stdout (progress) but capture stderr (errors)
+		cmd.Stdout = io.MultiWriter(os.Stdout, &stdout)
 		cmd.Stderr = &stderr
 	}
 
@@ -174,10 +203,91 @@ func (s *SkopeoRuntime) Save(ctx context.Context, image string, tarPath string, 
 	return nil
 }
 
-// Load loads an image from a tar file using docker-archive format
+// saveWithOCIDir saves image using oci format (dir), then packs to tar
+func (s *SkopeoRuntime) saveWithOCIDir(ctx context.Context, image string, tarPath string, options SaveOptions) error {
+	// Create temporary directory for OCI layout
+	tempDir := fmt.Sprintf("/tmp/skopeo-oci-%s-%d", sanitizeImageName(image), time.Now().Unix())
+	defer os.RemoveAll(tempDir)
+
+	args := []string{"copy", "--preserve-digests"}
+
+	// Add --all flag for multi-arch support
+	if options.MultiArch {
+		args = append(args, "--all")
+	} else {
+		// If not multi-arch, specify platform
+		targetPlatform := options.Platform
+		if targetPlatform == "" {
+			targetPlatform = "linux/amd64"
+		}
+		
+		if targetPlatform != "" && targetPlatform != "all" {
+			args = append(args, "--override-arch", extractArch(targetPlatform))
+			args = append(args, "--override-os", extractOS(targetPlatform))
+		}
+	}
+
+	if len(options.ExtraArgs) > 0 {
+		args = append(args, options.ExtraArgs...)
+	}
+	// Source: docker://image
+	args = append(args, fmt.Sprintf("docker://%s", image))
+	
+	// Destination: oci:tempDir (OCI layout format)
+	args = append(args, fmt.Sprintf("oci:%s", tempDir))
+
+	cmd := exec.CommandContext(ctx, s.command, args...)
+	env := os.Environ()
+	cmd.Env = env
+
+	var stdout, stderr bytes.Buffer
+	if options.Debug {
+		cmd.Stdout = io.MultiWriter(os.Stdout, &stdout)
+		cmd.Stderr = io.MultiWriter(os.Stderr, &stderr)
+	} else {
+		cmd.Stderr = &stderr
+	}
+
+	err := cmd.Run()
+	if err != nil {
+		errMsg := fmt.Sprintf("failed to save image %s to OCI dir: %s", image, stderr.String())
+		return errors.Wrap(err, errors.ErrRuntimeCommand, errMsg)
+	}
+
+	// Pack OCI directory to tar file
+	// Use tar command to create tar from directory
+	// Pack OCI directory to tar file
+	fmt.Printf("    📦 Packing OCI layout to tar file...\n")
+	tarCmd := exec.CommandContext(ctx, "tar", "-czf", tarPath, "-C", tempDir, ".")
+	tarCmd.Env = env
+	
+	var tarStderr bytes.Buffer
+	if options.Debug {
+		tarCmd.Stderr = io.MultiWriter(os.Stderr, &tarStderr)
+	} else {
+		tarCmd.Stderr = &tarStderr
+	}
+
+	err = tarCmd.Run()
+	if err != nil {
+		errMsg := fmt.Sprintf("failed to pack OCI dir to tar: %s", tarStderr.String())
+		return errors.Wrap(err, errors.ErrRuntimeCommand, errMsg)
+	}
+
+	// Generate checksum file if requested
+	if options.Checksum {
+		if _, err := generateChecksum(tarPath); err != nil {
+			return errors.Wrap(err, errors.ErrRuntimeCommand, fmt.Sprintf("failed to generate checksum for %s", tarPath))
+		}
+	}
+
+	return nil
+}
+
+// Load loads an image from a tar file using oci-archive or docker-archive format
 func (s *SkopeoRuntime) Load(ctx context.Context, tarPath string) error {
 	// Skopeo doesn't have a direct "load" command like Docker
-	// Instead, we copy from docker-archive to docker-daemon
+	// Instead, we copy from oci-archive/docker-archive to docker-daemon
 	// But this requires Docker daemon to be running
 	
 	// For now, we'll use a workaround: copy to a temp directory first
@@ -216,6 +326,9 @@ func (s *SkopeoRuntime) Push(ctx context.Context, image string, options PushOpti
 	// and we'll copy from docker-daemon to docker://
 	
 	args := []string{"copy", "--preserve-digests"}
+	if len(options.ExtraArgs) > 0 {
+		args = append(args, options.ExtraArgs...)
+	}
 	args = append(args, fmt.Sprintf("docker-daemon:%s", image))
 	args = append(args, fmt.Sprintf("docker://%s", image))
 
@@ -228,6 +341,19 @@ func (s *SkopeoRuntime) Push(ctx context.Context, image string, options PushOpti
 	}
 
 	return nil
+}
+
+// RemoveImage removes an image from local storage.
+// Skopeo does not store images locally; this operation is not supported.
+func (s *SkopeoRuntime) RemoveImage(ctx context.Context, image string, options RmiOptions) error {
+	_ = image
+	_ = options
+	return errors.New(errors.ErrRuntimeCommand, "rmi is not supported for skopeo - Skopeo does not store images locally, use docker, podman, or nerdctl")
+}
+
+// ListImages lists images in local storage. Skopeo does not store images locally; returns empty slice.
+func (s *SkopeoRuntime) ListImages(ctx context.Context) ([]string, error) {
+	return []string{}, nil
 }
 
 // Tag tags an image with a new name

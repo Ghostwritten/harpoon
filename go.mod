@@ -3,7 +3,6 @@ module github.com/harpoon/hpn
 go 1.22
 
 require (
-	github.com/schollz/progressbar/v3 v3.19.0
 	github.com/spf13/cobra v1.8.0
 	github.com/spf13/viper v1.18.2
 	golang.org/x/term v0.28.0

@@ -13,18 +13,20 @@ import (
 var (
 	pullImageFile string
 	pullPlatform  string
+	pullWorkers   int
 )
 
 var pullCmd = &cobra.Command{
 	Use:   "pull",
 	Short: "Pull images from registry",
-	Long:  `Pull container images from a registry to local.`,
+	Long:  `Pull container images from a registry to local. Pass extra flags to the underlying runtime (docker/podman/nerdctl/skopeo) by placing them after -- (e.g. hpn pull -f list.txt -- --tls-verify=false).`,
 	RunE:  executePull,
 }
 
 func init() {
 	pullCmd.Flags().StringVarP(&pullImageFile, "file", "f", "", "Image list file (required)")
 	pullCmd.Flags().StringVar(&pullPlatform, "platform", "", "Target platform (e.g., linux/amd64, linux/arm64, all for multi-arch)")
+	pullCmd.Flags().IntVar(&pullWorkers, "workers", 0, "Number of concurrent workers (0 = use config or default 5)")
 	rootCmd.AddCommand(pullCmd)
 }
 
@@ -51,6 +53,9 @@ func executePull(cmd *cobra.Command, args []string) error {
 
 	fmt.Printf("Found %d images to pull\n", len(images))
 
+	// Start timing
+	startTime := time.Now()
+
 	// Get configuration values with defaults
 	timeout := 5 * time.Minute
 	if cfg != nil && cfg.Runtime.Timeout > 0 {
@@ -66,8 +71,11 @@ func executePull(cmd *cobra.Command, args []string) error {
 		retryConfig = cfg.Runtime.Retry.ToRuntimeRetryConfig()
 	}
 
+	// Determine max workers: flag > config > default
 	maxWorkers := 5
-	if cfg != nil && cfg.Parallel.MaxWorkers > 0 {
+	if pullWorkers > 0 {
+		maxWorkers = pullWorkers
+	} else if cfg != nil && cfg.Parallel.MaxWorkers > 0 {
 		maxWorkers = cfg.Parallel.MaxWorkers
 	}
 
@@ -90,6 +98,9 @@ func executePull(cmd *cobra.Command, args []string) error {
 		proxyConfig = cfg.Proxy.ToRuntimeProxyConfig()
 	}
 
+	// Merge extra args: config first, then CLI (args after --)
+	extraArgs := mergeExtraArgs(getConfigExtraArgsPull(), args)
+
 	// Pull images with concurrency and retry
 	successCount, failedImages := pullImagesConcurrent(
 		selectedRuntime,
@@ -99,10 +110,15 @@ func executePull(cmd *cobra.Command, args []string) error {
 		retryConfig,
 		proxyConfig,
 		maxWorkers,
+		extraArgs,
 	)
+
+	// Calculate elapsed time
+	elapsed := time.Since(startTime)
 
 	// Print summary
 	fmt.Printf("\nSummary: %d successful, %d failed\n", successCount, len(failedImages))
+	fmt.Printf("Total time: %v\n", elapsed.Round(time.Second))
 
 	if len(failedImages) > 0 {
 		fmt.Printf("\nFailed images:\n")
@@ -124,6 +140,7 @@ func pullImagesConcurrent(
 	retryConfig containerruntime.RetryConfig,
 	proxyConfig *containerruntime.ProxyConfig,
 	maxWorkers int,
+	extraArgs []string,
 ) (int, []string) {
 	type pullResult struct {
 		image string
@@ -141,7 +158,7 @@ func pullImagesConcurrent(
 		go func() {
 			defer wg.Done()
 			for image := range jobs {
-				err := pullImageWithRetry(runtime, image, platform, timeout, retryConfig, proxyConfig)
+				err := pullImageWithRetry(runtime, image, platform, timeout, retryConfig, proxyConfig, extraArgs)
 				results <- pullResult{image: image, err: err}
 			}
 		}()
@@ -188,6 +205,7 @@ func pullImageWithRetry(
 	timeout time.Duration,
 	retryConfig containerruntime.RetryConfig,
 	proxyConfig *containerruntime.ProxyConfig,
+	extraArgs []string,
 ) error {
 	var lastErr error
 	delay := retryConfig.Delay
@@ -205,6 +223,7 @@ func pullImageWithRetry(
 			MultiArch: multiArch,
 			Proxy:     proxyConfig,
 			Debug:     IsDebug(),
+			ExtraArgs: extraArgs,
 		}
 
 		err := runtime.Pull(ctx, image, pullOptions)

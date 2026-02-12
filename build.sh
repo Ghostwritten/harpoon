@@ -5,6 +5,9 @@
 
 set -e
 
+# Use Go from PATH; avoid broken GOROOT (e.g. pointing to removed version)
+unset GOROOT
+
 BINARY_NAME="hpn"
 REQUIRED_GO_VERSION="1.21"
 DIST_DIR="dist"

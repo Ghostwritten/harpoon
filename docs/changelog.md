@@ -5,6 +5,20 @@ All notable changes to Harpoon (hpn) will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [v2.0.1] - 2025-02-13
+
+### Added
+
+- **list-images**: New `hpn list-images` subcommand to extract container image lists from Helm charts (remote or local tgz/dir). Output is one image per line, compatible with `hpn pull -f` / `hpn push -f`. Requires [Helm](https://helm.sh) CLI; use `--chart`, `--version`, `-f/--values`, `-o/--output`, `--release-name`.
+- **ls**: New `hpn ls` subcommand (alias `list`) with three modes: (1) `hpn ls` lists images in the local runtime (Docker/Podman/Nerdctl); (2) `hpn ls --path ./images` lists saved tar files in a directory with IMAGE, SIZE, CHECKSUM; (3) `hpn ls -f images.txt` checks whether images from a file exist in the runtime or in `--path`. Skopeo is not supported (no local image store).
+- **rmi**: New `hpn rmi` subcommand to remove images from the local runtime using `-f <file>`. No interactive confirmation; supports passthrough args (e.g. `hpn rmi -f list.txt -- -f` for force). Supported runtimes: Docker, Podman, Nerdctl; Skopeo returns an error.
+- **internal/chart**: New package for chart fetch, `helm template`, and YAML image extraction with filtering (embedded refs in args; excludes URLs, metric names, unix sockets).
+- **Runtime interface**: New `RemoveImage(ctx, image, RmiOptions)` and `ListImages(ctx)` on `ContainerRuntime`; `ImageNameFromTarFilename` in `internal/runtime/checksum.go` for reversing tar filenames to image names.
+
+### Improved
+
+- **list-images filtering**: Image extraction now filters out non-image strings (URLs, Prometheus metric names, `unix://` / `tcp://` / `fd://` prefixes, port-only tags) to reduce false positives in chart image lists.
+
 ## [v2.0] - 2025-01-21
 
 ### 🎉 Major Release Highlights

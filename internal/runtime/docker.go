@@ -53,6 +53,9 @@ func (d *DockerRuntime) Pull(ctx context.Context, image string, options PullOpti
 		args = append(args, "--platform", options.Platform)
 	}
 
+	if len(options.ExtraArgs) > 0 {
+		args = append(args, options.ExtraArgs...)
+	}
 	args = append(args, image)
 
 	cmd := exec.CommandContext(ctx, d.command, args...)
@@ -96,7 +99,12 @@ func (d *DockerRuntime) Pull(ctx context.Context, image string, options PullOpti
 
 // Save saves an image to a tar file
 func (d *DockerRuntime) Save(ctx context.Context, image string, tarPath string, options SaveOptions) error {
-	cmd := exec.CommandContext(ctx, d.command, "save", "-o", tarPath, image)
+	args := []string{"save", "-o", tarPath}
+	if len(options.ExtraArgs) > 0 {
+		args = append(args, options.ExtraArgs...)
+	}
+	args = append(args, image)
+	cmd := exec.CommandContext(ctx, d.command, args...)
 	
 	// Capture output for debug mode
 	var stdout, stderr bytes.Buffer
@@ -140,13 +148,62 @@ func (d *DockerRuntime) Load(ctx context.Context, tarPath string) error {
 
 // Push pushes an image to a registry
 func (d *DockerRuntime) Push(ctx context.Context, image string, options PushOptions) error {
-	cmd := exec.CommandContext(ctx, d.command, "push", image)
+	args := []string{"push"}
+	if len(options.ExtraArgs) > 0 {
+		args = append(args, options.ExtraArgs...)
+	}
+	args = append(args, image)
+	cmd := exec.CommandContext(ctx, d.command, args...)
 	
 	if err := cmd.Run(); err != nil {
 		return errors.Wrap(err, errors.ErrRuntimeCommand, fmt.Sprintf("failed to push image %s", image))
 	}
 
 	return nil
+}
+
+// RemoveImage removes an image from local storage
+func (d *DockerRuntime) RemoveImage(ctx context.Context, image string, options RmiOptions) error {
+	args := []string{"rmi"}
+	if len(options.ExtraArgs) > 0 {
+		args = append(args, options.ExtraArgs...)
+	}
+	args = append(args, image)
+	cmd := exec.CommandContext(ctx, d.command, args...)
+
+	var stdout, stderr bytes.Buffer
+	if options.Debug {
+		cmd.Stdout = io.MultiWriter(os.Stdout, &stdout)
+		cmd.Stderr = io.MultiWriter(os.Stderr, &stderr)
+	} else {
+		cmd.Stdout = &stdout
+		cmd.Stderr = &stderr
+	}
+
+	err := cmd.Run()
+	if err != nil {
+		errMsg := fmt.Sprintf("failed to remove image %s", image)
+		if options.Debug && (stdout.Len() > 0 || stderr.Len() > 0) {
+			errMsg += fmt.Sprintf("\nStdout:\n%s\nStderr:\n%s", stdout.String(), stderr.String())
+		} else if stderr.Len() > 0 {
+			errMsg += fmt.Sprintf("\nError: %s", stderr.String())
+		}
+		return errors.Wrap(err, errors.ErrRuntimeCommand, errMsg)
+	}
+	return nil
+}
+
+// ListImages lists images in local storage
+func (d *DockerRuntime) ListImages(ctx context.Context) ([]string, error) {
+	cmd := exec.CommandContext(ctx, d.command, "images", "--format", "{{.Repository}}:{{.Tag}}")
+	output, err := cmd.Output()
+	if err != nil {
+		if ee, ok := err.(*exec.ExitError); ok && len(ee.Stderr) > 0 {
+			return nil, errors.Wrap(err, errors.ErrRuntimeCommand, fmt.Sprintf("failed to list images: %s", string(ee.Stderr)))
+		}
+		return nil, errors.Wrap(err, errors.ErrRuntimeCommand, "failed to list images")
+	}
+	return parseListImagesOutput(string(output)), nil
 }
 
 // Tag tags an image with a new name

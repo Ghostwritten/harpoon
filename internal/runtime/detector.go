@@ -4,6 +4,7 @@ import (
 	"fmt"
 	"os/exec"
 	"sort"
+	"strings"
 
 	"github.com/harpoon/hpn/pkg/errors"
 )
@@ -86,4 +87,20 @@ func (d *Detector) GetByName(name string) (ContainerRuntime, error) {
 func IsCommandAvailable(command string) bool {
 	_, err := exec.LookPath(command)
 	return err == nil
+}
+
+// parseListImagesOutput parses docker/podman/nerdctl images output, filters out <none>:<none> and empty lines
+func parseListImagesOutput(output string) []string {
+	var result []string
+	for _, line := range strings.Split(output, "\n") {
+		line = strings.TrimSpace(line)
+		if line == "" {
+			continue
+		}
+		if strings.Contains(line, "<none>") {
+			continue
+		}
+		result = append(result, line)
+	}
+	return result
 }

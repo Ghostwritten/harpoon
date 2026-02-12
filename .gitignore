@@ -40,3 +40,6 @@ Thumbs.db
 # Temporary files
 *.tmp
 *.temp
+
+# list-images output (per-line image list)
+images.txt

@@ -6,6 +6,7 @@ import (
 	"os"
 	"path/filepath"
 	"strings"
+	"sync"
 	"time"
 
 	"github.com/spf13/cobra"
@@ -15,19 +16,20 @@ import (
 var (
 	loadPath      string
 	loadRecursive bool
+	loadWorkers   int
 )
 
 var loadCmd = &cobra.Command{
 	Use:   "load",
 	Short: "Load images from tar files",
-	Long:  `Load container images from tar files.`,
+	Long:  `Load container images from tar files. Use --path (-p) to specify the directory.`,
 	RunE:  executeLoad,
 }
 
 func init() {
-	loadCmd.Flags().StringVar(&loadPath, "path", "./images", "Input directory path (default: ./images)")
-	loadCmd.Flags().StringVar(&loadPath, "input", "./images", "Input directory path (alias for --path)")
+	loadCmd.Flags().StringVarP(&loadPath, "path", "p", "./images", "Input directory containing tar files (default: ./images)")
 	loadCmd.Flags().BoolVar(&loadRecursive, "recursive", false, "Load recursively from subdirectories")
+	loadCmd.Flags().IntVar(&loadWorkers, "workers", 0, "Number of concurrent workers (0 = use config or default 5)")
 	rootCmd.AddCommand(loadCmd)
 }
 
@@ -70,24 +72,32 @@ func executeLoad(cmd *cobra.Command, args []string) error {
 
 	fmt.Printf("Found %d tar files to load\n", len(tarFiles))
 
-	// Load each tar file
-	successCount := 0
-	failedFiles := []string{}
-
-	for i, tarFile := range tarFiles {
-		fmt.Printf("[%d/%d] Loading %s...\n", i+1, len(tarFiles), tarFile)
-
-		if err := loadImage(selectedRuntime, tarFile); err != nil {
-			fmt.Printf("❌ Failed to load %s: %v\n", tarFile, err)
-			failedFiles = append(failedFiles, tarFile)
-		} else {
-			fmt.Printf("✅ Successfully loaded %s\n", tarFile)
-			successCount++
-		}
+	// Determine max workers: flag > config > default
+	maxWorkers := 5
+	if loadWorkers > 0 {
+		maxWorkers = loadWorkers
+	} else if cfg != nil && cfg.Parallel.MaxWorkers > 0 {
+		maxWorkers = cfg.Parallel.MaxWorkers
 	}
+	fmt.Printf("Concurrent workers: %d\n", maxWorkers)
+	fmt.Println()
+
+	// Start timing
+	startTime := time.Now()
+
+	// Load tar files concurrently
+	successCount, failedFiles := loadImagesConcurrent(
+		selectedRuntime,
+		tarFiles,
+		maxWorkers,
+	)
+
+	// Calculate elapsed time
+	elapsed := time.Since(startTime)
 
 	// Print summary
 	fmt.Printf("\nSummary: %d successful, %d failed\n", successCount, len(failedFiles))
+	fmt.Printf("Total time: %v\n", elapsed.Round(time.Second))
 
 	if len(failedFiles) > 0 {
 		fmt.Printf("\nFailed files:\n")
@@ -146,4 +156,65 @@ func findTarFiles(dir string, recursive bool) ([]string, error) {
 	}
 
 	return tarFiles, nil
+}
+
+// loadImagesConcurrent loads images concurrently with worker pool
+func loadImagesConcurrent(
+	runtime containerruntime.ContainerRuntime,
+	tarFiles []string,
+	maxWorkers int,
+) (int, []string) {
+	type loadResult struct {
+		tarFile string
+		err     error
+	}
+
+	// Create worker pool
+	jobs := make(chan string, len(tarFiles))
+	results := make(chan loadResult, len(tarFiles))
+
+	// Start workers
+	var wg sync.WaitGroup
+	for i := 0; i < maxWorkers && i < len(tarFiles); i++ {
+		wg.Add(1)
+		go func() {
+			defer wg.Done()
+			for tarFile := range jobs {
+				err := loadImage(runtime, tarFile)
+				results <- loadResult{tarFile: tarFile, err: err}
+			}
+		}()
+	}
+
+	// Send jobs
+	go func() {
+		for _, tarFile := range tarFiles {
+			jobs <- tarFile
+		}
+		close(jobs)
+	}()
+
+	// Wait for all workers to finish
+	go func() {
+		wg.Wait()
+		close(results)
+	}()
+
+	// Collect results
+	successCount := 0
+	failedFiles := []string{}
+	completed := 0
+
+	for result := range results {
+		completed++
+		if result.err != nil {
+			fmt.Printf("[%d/%d] ❌ Failed to load %s: %v\n", completed, len(tarFiles), result.tarFile, result.err)
+			failedFiles = append(failedFiles, result.tarFile)
+		} else {
+			fmt.Printf("[%d/%d] ✅ Successfully loaded %s\n", completed, len(tarFiles), result.tarFile)
+			successCount++
+		}
+	}
+
+	return successCount, failedFiles
 }

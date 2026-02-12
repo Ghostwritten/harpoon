@@ -122,7 +122,7 @@ func validateProxyURL(proxyURL string) error {
 // validateRuntimeConfig validates runtime configuration
 func validateRuntimeConfig(runtime *types.RuntimeConfig) error {
 	if runtime.Preferred != "" {
-		validRuntimes := []string{"docker", "podman", "nerdctl"}
+		validRuntimes := []string{"docker", "podman", "nerdctl", "skopeo"}
 		valid := false
 		for _, r := range validRuntimes {
 			if runtime.Preferred == r {

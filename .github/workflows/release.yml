@@ -81,14 +81,13 @@ jobs:
     
     - name: Prepare Release Notes
       run: |
-        if [ -f "docs/release/v2.0.0.md" ]; then
-          echo "Using docs/release/v2.0.0.md as release body"
-          cp docs/release/v2.0.0.md RELEASE_BODY.md
-        elif [ -f "RELEASE_BODY_v2.0.0.md" ]; then
-          echo "Using RELEASE_BODY_v2.0.0.md as release body"
-          cp RELEASE_BODY_v2.0.0.md RELEASE_BODY.md
+        VERSION=${GITHUB_REF#refs/tags/}
+        if [ -f "docs/release/${VERSION}.md" ]; then
+          echo "Using docs/release/${VERSION}.md as release body"
+          cp "docs/release/${VERSION}.md" RELEASE_BODY.md
         else
-          echo "No release body file found, will use auto-generated notes"
+          echo "No docs/release/${VERSION}.md found, release will have no body"
+          touch RELEASE_BODY.md
         fi
     
     - name: Create Release

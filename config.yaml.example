@@ -15,12 +15,17 @@ proxy:
 
 # Container runtime settings
 runtime:
-  preferred: docker  # docker, podman, or nerdctl
+  preferred: docker  # docker, podman, nerdctl, or skopeo
+  auto_fallback: false  # if true, use another available runtime when preferred is unavailable
   timeout: 5m
   retry:
     max_attempts: 3
     delay: 1s
     max_delay: 30s
+  # extra_args:  # optional passthrough to underlying runtime (docker/podman/nerdctl/skopeo)
+  #   pull: ["--tls-verify=false"]
+  #   save: []
+  #   push: []
 
 # Logging configuration
 logging:

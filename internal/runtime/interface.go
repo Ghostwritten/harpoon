@@ -31,8 +31,20 @@ type ContainerRuntime interface {
 	// Login logs in to a container registry
 	Login(ctx context.Context, registry string, options LoginOptions) error
 	
+	// RemoveImage removes an image from local storage (not supported by Skopeo)
+	RemoveImage(ctx context.Context, image string, options RmiOptions) error
+	
+	// ListImages lists images in local storage (not supported by Skopeo)
+	ListImages(ctx context.Context) ([]string, error)
+	
 	// Version returns the runtime version
 	Version() (string, error)
+}
+
+// RmiOptions contains options for remove image operations
+type RmiOptions struct {
+	ExtraArgs []string // Passthrough args to underlying runtime (e.g. -f for force)
+	Debug     bool     // Enable debug mode to show detailed output
 }
 
 // PullOptions contains options for pull operations
@@ -41,23 +53,26 @@ type PullOptions struct {
 	Retry     RetryConfig
 	Timeout   time.Duration
 	Platform  string
-	MultiArch bool // When Platform == "all", set to true
-	Debug     bool // Enable debug mode to show detailed output
+	MultiArch bool     // When Platform == "all", set to true
+	Debug     bool     // Enable debug mode to show detailed output
+	ExtraArgs []string // Passthrough args to underlying runtime (e.g. --tls-verify=false)
 }
 
 // SaveOptions contains options for save operations
 type SaveOptions struct {
-	Checksum  bool   // Whether to generate checksum file (default: true)
-	MultiArch bool   // Whether to save all architectures (only for Skopeo, when Platform == "all")
-	Platform  string // Target platform (e.g., linux/amd64, linux/arm64). If empty, defaults to linux/amd64 for Skopeo
-	Debug     bool   // Enable debug mode to show detailed output
+	Checksum  bool     // Whether to generate checksum file (default: true)
+	MultiArch bool     // Whether to save all architectures (only for Skopeo, when Platform == "all")
+	Platform  string   // Target platform (e.g., linux/amd64, linux/arm64). If empty, defaults to linux/amd64 for Skopeo
+	Debug     bool     // Enable debug mode to show detailed output
+	ExtraArgs []string // Passthrough args to underlying runtime
 }
 
 // PushOptions contains options for push operations
 type PushOptions struct {
-	Timeout time.Duration
-	Retry   RetryConfig
-	Debug   bool // Enable debug mode to show detailed output
+	Timeout   time.Duration
+	Retry     RetryConfig
+	Debug     bool     // Enable debug mode to show detailed output
+	ExtraArgs []string // Passthrough args to underlying runtime
 }
 
 // LoginOptions contains options for login operations
