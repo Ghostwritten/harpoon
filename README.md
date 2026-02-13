@@ -1,8 +1,10 @@
 # Harpoon (hpn) 🎯
 
+<img src="./logo.png" alt="Harpoon logo" width="30%">
+
 [![License](https://img.shields.io/badge/license-MIT-blue.svg)](LICENSE)
 [![Go Version](https://img.shields.io/badge/go-1.22+-blue.svg)](https://golang.org)
-[![Version](https://img.shields.io/badge/version-v2.0.1-green.svg)](https://github.com/Ghostwritten/harpoon/releases)
+[![Version](https://img.shields.io/badge/version-v2.0.2-green.svg)](https://github.com/Ghostwritten/harpoon/releases)
 [![Build Status](https://github.com/Ghostwritten/harpoon/workflows/Test/badge.svg)](https://github.com/Ghostwritten/harpoon/actions)
 
 **Harpoon** is a modern, efficient container image management CLI tool written in Go. It provides powerful operations for pulling, saving, loading, and pushing container images with support for multiple container runtimes and flexible operation modes.
@@ -16,7 +18,7 @@
 - **Wide Compatibility**: Statically linked Linux binaries compatible with RHEL 8.x, RHEL 9.x, Ubuntu, Debian, Alpine, and more
 - **Configuration Management**: YAML-based config with environment variables
 - **Batch Operations**: Efficient bulk image processing
-- **Helm Chart Image List**: Extract image list from Helm charts (`list-images`) for offline or CI use
+- **Helm Chart Image List**: Extract image list from Helm charts (`extract`) for offline or CI use
 - **Enterprise Ready**: Proxy support, unified authentication, private registries
 - **Secure Authentication**: Interactive password input, stdin support, environment variables
 
@@ -86,7 +88,7 @@ hpn push -f images.txt --registry harbor.company.com
 hpn push -f images.txt --registry harbor.company.com --project production
 
 # Get image list from a Helm chart (requires Helm CLI), then pull
-hpn list-images --chart bitnami/nginx --version 15.0.0 -o images.txt
+hpn extract --chart bitnami/nginx --version 15.0.0 -o images.txt
 hpn pull -f images.txt
 
 # List images: runtime, path, or check file
@@ -223,14 +225,15 @@ We welcome contributions! Please see the [Building Guide](docs/building.md) for 
 - **CI/CD Pipelines**: Automated image operations
 - **Development Workflows**: Local image management
 
-## 🆕 What's New in v2.0.1
+## 🆕 What's New in v2.0.2
 
-- **list-images**: Extract image list from Helm charts (remote or local) for `hpn pull -f` / `hpn push -f`; requires [Helm](https://helm.sh) CLI
-- **ls** (alias `list`): List runtime images, list tar files in `--path` with SIZE/CHECKSUM, or check `-f` list against runtime/path
-- **rmi**: Remove images from a file in local runtime (Docker/Podman/Nerdctl); passthrough e.g. `-- -f` for force
-- **Improved**: Chart image extraction filters out URLs, metric names, and socket paths to reduce false positives
+- **Exit codes**: 0 success, 1 runtime error, 2 usage error — scripts can rely on exit code 2 for missing flags or invalid args
+- **CONTRIBUTING.md**: Build, test, vet, code style, and PR process; exit code and logging notes
+- **Code quality**: Centralized command registration, English comments in runtime packages, cmd tests, CI `go mod verify` / `go vet`
+- **Project logo**: New logo at repo root (see above)
+- **.gitignore**: Default save/load directory `images/` is now ignored
 
-See the [Changelog](docs/changelog.md) for complete details.
+See the [Changelog](docs/changelog.md) and [Release Notes](docs/release/v2.0.2.md) for complete details.
 
 ## 🤝 Community & Support
 

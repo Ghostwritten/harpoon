@@ -5,7 +5,7 @@
 ### Option 1: GitHub Releases
 
 1. Go to [Releases](https://github.com/Ghostwritten/harpoon/releases)
-2. Choose the latest version (e.g. v2.0.1)
+2. Choose the latest version (e.g. v2.0.2)
 3. Under "Assets", download the binary for your platform:
    - **Linux AMD64**: `hpn-linux-amd64`
    - **Linux ARM64**: `hpn-linux-arm64`
@@ -18,8 +18,8 @@
 #### Linux / macOS
 
 ```bash
-# Set version (use a specific tag like v2.0.1 or "latest" for the latest release)
-VERSION="v2.0.1"
+# Set version (use a specific tag like v2.0.2 or "latest" for the latest release)
+VERSION="v2.0.2"
 
 # Linux AMD64
 curl -L -o hpn "https://github.com/Ghostwritten/harpoon/releases/download/${VERSION}/hpn-linux-amd64"
@@ -37,7 +37,7 @@ sudo mv hpn /usr/local/bin/
 #### Windows (PowerShell)
 
 ```powershell
-$VERSION = "v2.0.1"
+$VERSION = "v2.0.2"
 Invoke-WebRequest -Uri "https://github.com/Ghostwritten/harpoon/releases/download/$VERSION/hpn-windows-amd64.exe" -OutFile "hpn.exe"
 # Add hpn.exe to your PATH if desired
 ```
@@ -45,7 +45,7 @@ Invoke-WebRequest -Uri "https://github.com/Ghostwritten/harpoon/releases/downloa
 ### Option 3: GitHub CLI
 
 ```bash
-gh release download v2.0.1 --repo Ghostwritten/harpoon
+gh release download v2.0.2 --repo Ghostwritten/harpoon
 # Or latest:
 gh release download --repo Ghostwritten/harpoon
 ```
