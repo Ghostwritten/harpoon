@@ -41,5 +41,9 @@ Thumbs.db
 *.tmp
 *.temp
 
-# list-images output (per-line image list)
+# extract output (per-line image list)
 images.txt
+images/
+
+# VitePress / website
+website/node_modules
