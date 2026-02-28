@@ -7,6 +7,9 @@ on:
       - 'website/**'
       - '.github/workflows/deploy-docs.yml'
 
+permissions:
+  contents: write   # Required for pushing to gh-pages branch
+
 jobs:
   build-and-deploy:
     runs-on: ubuntu-latest
