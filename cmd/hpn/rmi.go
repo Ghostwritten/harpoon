@@ -23,9 +23,8 @@ var rmiCmd = &cobra.Command{
 }
 
 func init() {
-	rmiCmd.Flags().StringVarP(&rmiImageFile, "file", "f", "", "Image list file (required)")
+	rmiCmd.Flags().StringVarP(&rmiImageFile, "file", "f", "", "Image list file (required; use - for stdin)")
 	rmiCmd.Flags().IntVar(&rmiWorkers, "workers", 0, "Number of concurrent workers (0 = use config or default 5)")
-	rootCmd.AddCommand(rmiCmd)
 }
 
 func selectRmiRuntime() (containerruntime.ContainerRuntime, error) {
@@ -41,7 +40,7 @@ func selectRmiRuntime() (containerruntime.ContainerRuntime, error) {
 
 func executeRmi(cmd *cobra.Command, args []string) error {
 	if rmiImageFile == "" {
-		return fmt.Errorf("missing required --file parameter")
+		return usageErrorf("missing required --file parameter")
 	}
 
 	fmt.Printf("Removing images from file: %s\n", rmiImageFile)
@@ -67,7 +66,7 @@ func executeRmi(cmd *cobra.Command, args []string) error {
 		maxWorkers = cfg.Parallel.MaxWorkers
 	}
 
-	extraArgs := mergeExtraArgs(nil, args)
+	extraArgs := mergeExtraArgs(getConfigExtraArgsRmi(), args)
 
 	startTime := time.Now()
 	successCount, failedImages := rmiImagesConcurrent(selectedRuntime, images, maxWorkers, extraArgs)

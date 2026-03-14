@@ -30,4 +30,4 @@ go build -o hpn ./cmd/hpn
 hpn --version
 ```
 
-At least one container runtime (Docker, Podman, or Nerdctl) must be installed. For `list-images`, [Helm](https://helm.sh) is also required.
+At least one container runtime (Docker, Podman, or Nerdctl) must be installed. For `extract`, [Helm](https://helm.sh) is also required.

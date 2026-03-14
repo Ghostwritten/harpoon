@@ -26,6 +26,7 @@ runtime:
   #   pull: ["--tls-verify=false"]
   #   save: []
   #   push: []
+  #   rmi: ["-f"]   # e.g. force remove for docker
 
 # Logging configuration
 logging:

@@ -36,7 +36,6 @@ func (n *NerdctlRuntime) IsAvailable() bool {
 		return false
 	}
 
-	// Test if Nerdctl is working
 	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
 	defer cancel()
 
@@ -44,14 +43,11 @@ func (n *NerdctlRuntime) IsAvailable() bool {
 	return cmd.Run() == nil
 }
 
-// Pull pulls an image from a registry
+// Pull pulls an image from a registry.
+// Pass --insecure-registry via ExtraArgs when pulling from an HTTP registry.
 func (n *NerdctlRuntime) Pull(ctx context.Context, image string, options PullOptions) error {
 	args := []string{"pull"}
 
-	// Add insecure registry flag for private registries
-	args = append(args, "--insecure-registry")
-
-	// Add platform if specified
 	if options.Platform != "" && options.Platform != "all" {
 		args = append(args, "--platform", options.Platform)
 	}
@@ -62,41 +58,21 @@ func (n *NerdctlRuntime) Pull(ctx context.Context, image string, options PullOpt
 	args = append(args, image)
 
 	cmd := exec.CommandContext(ctx, n.command, args...)
+	applyProxyEnv(cmd, options.Proxy)
 
-	// Set proxy environment if configured
-	if options.Proxy != nil && options.Proxy.Enabled {
-		env := os.Environ()
-		if options.Proxy.HTTP != "" {
-			env = append(env, fmt.Sprintf("http_proxy=%s", options.Proxy.HTTP))
-		}
-		if options.Proxy.HTTPS != "" {
-			env = append(env, fmt.Sprintf("https_proxy=%s", options.Proxy.HTTPS))
-		}
-		cmd.Env = env
-	}
-
-	// Capture output for debug mode
-	var stdout, stderr bytes.Buffer
+	var stderr bytes.Buffer
 	if options.Debug {
-		cmd.Stdout = io.MultiWriter(os.Stdout, &stdout)
+		cmd.Stdout = os.Stdout
 		cmd.Stderr = io.MultiWriter(os.Stderr, &stderr)
 	} else {
-		// In non-debug mode, still show progress but capture errors
 		cmd.Stdout = os.Stdout
 		cmd.Stderr = &stderr
 	}
 
-	err := cmd.Run()
-	if err != nil {
-		errMsg := fmt.Sprintf("failed to pull image %s", image)
-		if options.Debug && (stdout.Len() > 0 || stderr.Len() > 0) {
-			errMsg += fmt.Sprintf("\nStdout:\n%s\nStderr:\n%s", stdout.String(), stderr.String())
-		} else if stderr.Len() > 0 {
-			errMsg += fmt.Sprintf("\nError: %s", stderr.String())
-		}
-		return errors.Wrap(err, errors.ErrRuntimeCommand, errMsg)
+	if err := cmd.Run(); err != nil {
+		return errors.Wrap(err, errors.ErrRuntimeCommand,
+			buildErrMsg(fmt.Sprintf("failed to pull image %s", image), stderr.String(), options.Debug))
 	}
-
 	return nil
 }
 
@@ -108,64 +84,63 @@ func (n *NerdctlRuntime) Save(ctx context.Context, image string, tarPath string,
 	}
 	args = append(args, image)
 	cmd := exec.CommandContext(ctx, n.command, args...)
-	
-	if err := cmd.Run(); err != nil {
-		return errors.Wrap(err, errors.ErrRuntimeCommand, fmt.Sprintf("failed to save image %s to %s", image, tarPath))
+
+	var stderr bytes.Buffer
+	if options.Debug {
+		cmd.Stderr = io.MultiWriter(os.Stderr, &stderr)
+	} else {
+		cmd.Stderr = &stderr
 	}
 
-	// Generate checksum file if requested (default: true)
+	if err := cmd.Run(); err != nil {
+		return errors.Wrap(err, errors.ErrRuntimeCommand,
+			buildErrMsg(fmt.Sprintf("failed to save image %s to %s", image, tarPath), stderr.String(), options.Debug))
+	}
+
 	if options.Checksum {
 		if _, err := generateChecksum(tarPath); err != nil {
-			return errors.Wrap(err, errors.ErrRuntimeCommand, fmt.Sprintf("failed to generate checksum for %s", tarPath))
+			return errors.Wrap(err, errors.ErrRuntimeCommand,
+				fmt.Sprintf("failed to generate checksum for %s", tarPath))
 		}
 	}
-
 	return nil
 }
 
-// Load loads an image from a tar file
-func (n *NerdctlRuntime) Load(ctx context.Context, tarPath string) error {
+// Load loads an image from a tar file.
+// imageName is accepted for interface compatibility but unused: nerdctl load reads the
+// image reference directly from the tar manifest.
+func (n *NerdctlRuntime) Load(ctx context.Context, tarPath string, _ string) error {
 	cmd := exec.CommandContext(ctx, n.command, "load", "-i", tarPath)
-	
 	if err := cmd.Run(); err != nil {
-		return errors.Wrap(err, errors.ErrRuntimeCommand, fmt.Sprintf("failed to load image from %s", tarPath))
+		return errors.Wrap(err, errors.ErrRuntimeCommand,
+			fmt.Sprintf("failed to load image from %s", tarPath))
 	}
-
 	return nil
 }
 
-// Push pushes an image to a registry
+// Push pushes an image to a registry.
+// Pass --insecure-registry via ExtraArgs when pushing to an HTTP registry.
 func (n *NerdctlRuntime) Push(ctx context.Context, image string, options PushOptions) error {
 	args := []string{"push"}
-	// Add insecure registry flag for private registries
-	args = append(args, "--insecure-registry")
 	if len(options.ExtraArgs) > 0 {
 		args = append(args, options.ExtraArgs...)
 	}
 	args = append(args, image)
-
 	cmd := exec.CommandContext(ctx, n.command, args...)
-	
-	// Capture output for debug mode
-	var stdout, stderr bytes.Buffer
+
+	var stderr bytes.Buffer
 	if options.Debug {
-		cmd.Stdout = io.MultiWriter(os.Stdout, &stdout)
+		cmd.Stdout = os.Stdout
 		cmd.Stderr = io.MultiWriter(os.Stderr, &stderr)
 	} else {
 		cmd.Stdout = os.Stdout
 		cmd.Stderr = &stderr
 	}
-	
-	if err := cmd.Run(); err != nil {
-		errMsg := fmt.Sprintf("failed to push image %s", image)
-		if options.Debug && (stdout.Len() > 0 || stderr.Len() > 0) {
-			errMsg += fmt.Sprintf("\nStdout:\n%s\nStderr:\n%s", stdout.String(), stderr.String())
-		} else if stderr.Len() > 0 {
-			errMsg += fmt.Sprintf("\nError: %s", stderr.String())
-		}
-		return errors.Wrap(err, errors.ErrRuntimeCommand, errMsg)
-	}
 
+	if err := cmd.Run(); err != nil {
+		return errors.Wrap(err, errors.ErrRuntimeCommand,
+			buildErrMsg(fmt.Sprintf("failed to push image %s", image), stderr.String(), options.Debug))
+	}
 	return nil
 }
 
@@ -178,24 +153,17 @@ func (n *NerdctlRuntime) RemoveImage(ctx context.Context, image string, options 
 	args = append(args, image)
 	cmd := exec.CommandContext(ctx, n.command, args...)
 
-	var stdout, stderr bytes.Buffer
+	var stderr bytes.Buffer
 	if options.Debug {
-		cmd.Stdout = io.MultiWriter(os.Stdout, &stdout)
+		cmd.Stdout = os.Stdout
 		cmd.Stderr = io.MultiWriter(os.Stderr, &stderr)
 	} else {
-		cmd.Stdout = &stdout
 		cmd.Stderr = &stderr
 	}
 
-	err := cmd.Run()
-	if err != nil {
-		errMsg := fmt.Sprintf("failed to remove image %s", image)
-		if options.Debug && (stdout.Len() > 0 || stderr.Len() > 0) {
-			errMsg += fmt.Sprintf("\nStdout:\n%s\nStderr:\n%s", stdout.String(), stderr.String())
-		} else if stderr.Len() > 0 {
-			errMsg += fmt.Sprintf("\nError: %s", stderr.String())
-		}
-		return errors.Wrap(err, errors.ErrRuntimeCommand, errMsg)
+	if err := cmd.Run(); err != nil {
+		return errors.Wrap(err, errors.ErrRuntimeCommand,
+			buildErrMsg(fmt.Sprintf("failed to remove image %s", image), stderr.String(), options.Debug))
 	}
 	return nil
 }
@@ -206,7 +174,8 @@ func (n *NerdctlRuntime) ListImages(ctx context.Context) ([]string, error) {
 	output, err := cmd.Output()
 	if err != nil {
 		if ee, ok := err.(*exec.ExitError); ok && len(ee.Stderr) > 0 {
-			return nil, errors.Wrap(err, errors.ErrRuntimeCommand, fmt.Sprintf("failed to list images: %s", string(ee.Stderr)))
+			return nil, errors.Wrap(err, errors.ErrRuntimeCommand,
+				fmt.Sprintf("failed to list images: %s", string(ee.Stderr)))
 		}
 		return nil, errors.Wrap(err, errors.ErrRuntimeCommand, "failed to list images")
 	}
@@ -216,15 +185,15 @@ func (n *NerdctlRuntime) ListImages(ctx context.Context) ([]string, error) {
 // Tag tags an image with a new name
 func (n *NerdctlRuntime) Tag(ctx context.Context, source, target string) error {
 	cmd := exec.CommandContext(ctx, n.command, "tag", source, target)
-	
 	if err := cmd.Run(); err != nil {
-		return errors.Wrap(err, errors.ErrRuntimeCommand, fmt.Sprintf("failed to tag image %s as %s", source, target))
+		return errors.Wrap(err, errors.ErrRuntimeCommand,
+			fmt.Sprintf("failed to tag image %s as %s", source, target))
 	}
-
 	return nil
 }
 
-// Login logs in to a container registry
+// Login logs in to a container registry.
+// The password is always delivered via stdin to prevent it appearing in the process table.
 func (n *NerdctlRuntime) Login(ctx context.Context, registry string, options LoginOptions) error {
 	args := []string{"login"}
 
@@ -232,49 +201,47 @@ func (n *NerdctlRuntime) Login(ctx context.Context, registry string, options Log
 		args = append(args, "-u", options.Username)
 	}
 
-	if options.PasswordStdin {
-		args = append(args, "--password-stdin")
-	} else if options.Password != "" {
-		args = append(args, "-p", options.Password)
+	if options.Insecure {
+		// Nerdctl does not support --insecure at login time.
+		fmt.Printf("Warning: Nerdctl does not support --insecure flag directly. " +
+			"Configure containerd for insecure registries in /etc/containerd/config.toml\n")
 	}
 
-	// Nerdctl 不支持 --insecure，但可以通过环境变量配置
-	if options.Insecure {
-		fmt.Printf("Warning: Nerdctl does not support --insecure flag directly. " +
-			"Configure containerd for insecure registries.\n")
+	// Always use --password-stdin to keep the credential out of the process table.
+	if options.Password != "" || options.PasswordStdin {
+		args = append(args, "--password-stdin")
 	}
 
 	args = append(args, registry)
-
 	cmd := exec.CommandContext(ctx, n.command, args...)
 
-	// 如果使用 --password-stdin，从 stdin 读取密码
-	if options.PasswordStdin && options.Password != "" {
+	if options.Password != "" {
 		cmd.Stdin = strings.NewReader(options.Password)
 	}
 
-	// Capture output for debug mode
-	var stdout, stderr bytes.Buffer
+	var stderr bytes.Buffer
 	if options.Debug {
-		cmd.Stdout = io.MultiWriter(os.Stdout, &stdout)
+		cmd.Stdout = os.Stdout
 		cmd.Stderr = io.MultiWriter(os.Stderr, &stderr)
 	} else {
-		// In non-debug mode, show output but capture errors
 		cmd.Stdout = os.Stdout
 		cmd.Stderr = &stderr
 	}
 
-	err := cmd.Run()
-	if err != nil {
-		errMsg := fmt.Sprintf("failed to login to registry %s", registry)
-		if options.Debug && (stdout.Len() > 0 || stderr.Len() > 0) {
-			errMsg += fmt.Sprintf("\nStdout:\n%s\nStderr:\n%s", stdout.String(), stderr.String())
-		} else if stderr.Len() > 0 {
-			errMsg += fmt.Sprintf("\nError: %s", stderr.String())
-		}
-		return errors.Wrap(err, errors.ErrRuntimeCommand, errMsg)
+	if err := cmd.Run(); err != nil {
+		return errors.Wrap(err, errors.ErrRuntimeCommand,
+			buildErrMsg(fmt.Sprintf("failed to login to registry %s", registry), stderr.String(), options.Debug))
 	}
+	return nil
+}
 
+// Logout logs out from a container registry
+func (n *NerdctlRuntime) Logout(ctx context.Context, registry string) error {
+	cmd := exec.CommandContext(ctx, n.command, "logout", registry)
+	if err := cmd.Run(); err != nil {
+		return errors.Wrap(err, errors.ErrRuntimeCommand,
+			fmt.Sprintf("failed to logout from registry %s", registry))
+	}
 	return nil
 }
 
@@ -283,25 +250,21 @@ func (n *NerdctlRuntime) Version() (string, error) {
 	cmd := exec.Command(n.command, "version", "--format", "{{.Client.Version}}")
 	output, err := cmd.Output()
 	if err != nil {
-		// Try alternative format
+		// Fallback: plain version output
 		cmd = exec.Command(n.command, "version")
 		output, err = cmd.Output()
 		if err != nil {
 			return "", errors.Wrap(err, errors.ErrRuntimeCommand, "failed to get Nerdctl version")
 		}
-		
-		// Parse version from output
-		lines := strings.Split(string(output), "\n")
-		for _, line := range lines {
+		for _, line := range strings.Split(string(output), "\n") {
 			if strings.Contains(line, "Version:") {
-				parts := strings.Split(line, ":")
-				if len(parts) > 1 {
+				parts := strings.SplitN(line, ":", 2)
+				if len(parts) == 2 {
 					return strings.TrimSpace(parts[1]), nil
 				}
 			}
 		}
 		return "unknown", nil
 	}
-
 	return strings.TrimSpace(string(output)), nil
 }

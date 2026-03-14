@@ -36,7 +36,6 @@ func (d *DockerRuntime) IsAvailable() bool {
 		return false
 	}
 
-	// Test if Docker daemon is running
 	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
 	defer cancel()
 
@@ -48,7 +47,6 @@ func (d *DockerRuntime) IsAvailable() bool {
 func (d *DockerRuntime) Pull(ctx context.Context, image string, options PullOptions) error {
 	args := []string{"pull"}
 
-	// Add platform if specified
 	if options.Platform != "" && options.Platform != "all" {
 		args = append(args, "--platform", options.Platform)
 	}
@@ -59,41 +57,21 @@ func (d *DockerRuntime) Pull(ctx context.Context, image string, options PullOpti
 	args = append(args, image)
 
 	cmd := exec.CommandContext(ctx, d.command, args...)
+	applyProxyEnv(cmd, options.Proxy)
 
-	// Set proxy environment if configured
-	if options.Proxy != nil && options.Proxy.Enabled {
-		env := os.Environ()
-		if options.Proxy.HTTP != "" {
-			env = append(env, fmt.Sprintf("http_proxy=%s", options.Proxy.HTTP))
-		}
-		if options.Proxy.HTTPS != "" {
-			env = append(env, fmt.Sprintf("https_proxy=%s", options.Proxy.HTTPS))
-		}
-		cmd.Env = env
-	}
-
-	// Capture output for debug mode
-	var stdout, stderr bytes.Buffer
+	var stderr bytes.Buffer
 	if options.Debug {
-		cmd.Stdout = io.MultiWriter(os.Stdout, &stdout)
+		cmd.Stdout = os.Stdout
 		cmd.Stderr = io.MultiWriter(os.Stderr, &stderr)
 	} else {
-		// In non-debug mode, still show progress but capture errors
 		cmd.Stdout = os.Stdout
 		cmd.Stderr = &stderr
 	}
 
-	err := cmd.Run()
-	if err != nil {
-		errMsg := fmt.Sprintf("failed to pull image %s", image)
-		if options.Debug && (stdout.Len() > 0 || stderr.Len() > 0) {
-			errMsg += fmt.Sprintf("\nStdout:\n%s\nStderr:\n%s", stdout.String(), stderr.String())
-		} else if stderr.Len() > 0 {
-			errMsg += fmt.Sprintf("\nError: %s", stderr.String())
-		}
-		return errors.Wrap(err, errors.ErrRuntimeCommand, errMsg)
+	if err := cmd.Run(); err != nil {
+		return errors.Wrap(err, errors.ErrRuntimeCommand,
+			buildErrMsg(fmt.Sprintf("failed to pull image %s", image), stderr.String(), options.Debug))
 	}
-
 	return nil
 }
 
@@ -105,44 +83,37 @@ func (d *DockerRuntime) Save(ctx context.Context, image string, tarPath string, 
 	}
 	args = append(args, image)
 	cmd := exec.CommandContext(ctx, d.command, args...)
-	
-	// Capture output for debug mode
-	var stdout, stderr bytes.Buffer
+
+	var stderr bytes.Buffer
 	if options.Debug {
-		cmd.Stdout = io.MultiWriter(os.Stdout, &stdout)
 		cmd.Stderr = io.MultiWriter(os.Stderr, &stderr)
 	} else {
 		cmd.Stderr = &stderr
 	}
-	
+
 	if err := cmd.Run(); err != nil {
-		errMsg := fmt.Sprintf("failed to save image %s to %s", image, tarPath)
-		if options.Debug && (stdout.Len() > 0 || stderr.Len() > 0) {
-			errMsg += fmt.Sprintf("\nStdout:\n%s\nStderr:\n%s", stdout.String(), stderr.String())
-		} else if stderr.Len() > 0 {
-			errMsg += fmt.Sprintf("\nError: %s", stderr.String())
-		}
-		return errors.Wrap(err, errors.ErrRuntimeCommand, errMsg)
+		return errors.Wrap(err, errors.ErrRuntimeCommand,
+			buildErrMsg(fmt.Sprintf("failed to save image %s to %s", image, tarPath), stderr.String(), options.Debug))
 	}
 
-	// Generate checksum file if requested (default: true)
 	if options.Checksum {
 		if _, err := generateChecksum(tarPath); err != nil {
-			return errors.Wrap(err, errors.ErrRuntimeCommand, fmt.Sprintf("failed to generate checksum for %s", tarPath))
+			return errors.Wrap(err, errors.ErrRuntimeCommand,
+				fmt.Sprintf("failed to generate checksum for %s", tarPath))
 		}
 	}
-
 	return nil
 }
 
-// Load loads an image from a tar file
-func (d *DockerRuntime) Load(ctx context.Context, tarPath string) error {
+// Load loads an image from a tar file.
+// imageName is accepted for interface compatibility but unused: docker load reads the
+// image reference directly from the tar manifest.
+func (d *DockerRuntime) Load(ctx context.Context, tarPath string, _ string) error {
 	cmd := exec.CommandContext(ctx, d.command, "load", "-i", tarPath)
-	
 	if err := cmd.Run(); err != nil {
-		return errors.Wrap(err, errors.ErrRuntimeCommand, fmt.Sprintf("failed to load image from %s", tarPath))
+		return errors.Wrap(err, errors.ErrRuntimeCommand,
+			fmt.Sprintf("failed to load image from %s", tarPath))
 	}
-
 	return nil
 }
 
@@ -154,11 +125,20 @@ func (d *DockerRuntime) Push(ctx context.Context, image string, options PushOpti
 	}
 	args = append(args, image)
 	cmd := exec.CommandContext(ctx, d.command, args...)
-	
-	if err := cmd.Run(); err != nil {
-		return errors.Wrap(err, errors.ErrRuntimeCommand, fmt.Sprintf("failed to push image %s", image))
+
+	var stderr bytes.Buffer
+	if options.Debug {
+		cmd.Stdout = os.Stdout
+		cmd.Stderr = io.MultiWriter(os.Stderr, &stderr)
+	} else {
+		cmd.Stdout = os.Stdout
+		cmd.Stderr = &stderr
 	}
 
+	if err := cmd.Run(); err != nil {
+		return errors.Wrap(err, errors.ErrRuntimeCommand,
+			buildErrMsg(fmt.Sprintf("failed to push image %s", image), stderr.String(), options.Debug))
+	}
 	return nil
 }
 
@@ -171,24 +151,17 @@ func (d *DockerRuntime) RemoveImage(ctx context.Context, image string, options R
 	args = append(args, image)
 	cmd := exec.CommandContext(ctx, d.command, args...)
 
-	var stdout, stderr bytes.Buffer
+	var stderr bytes.Buffer
 	if options.Debug {
-		cmd.Stdout = io.MultiWriter(os.Stdout, &stdout)
+		cmd.Stdout = os.Stdout
 		cmd.Stderr = io.MultiWriter(os.Stderr, &stderr)
 	} else {
-		cmd.Stdout = &stdout
 		cmd.Stderr = &stderr
 	}
 
-	err := cmd.Run()
-	if err != nil {
-		errMsg := fmt.Sprintf("failed to remove image %s", image)
-		if options.Debug && (stdout.Len() > 0 || stderr.Len() > 0) {
-			errMsg += fmt.Sprintf("\nStdout:\n%s\nStderr:\n%s", stdout.String(), stderr.String())
-		} else if stderr.Len() > 0 {
-			errMsg += fmt.Sprintf("\nError: %s", stderr.String())
-		}
-		return errors.Wrap(err, errors.ErrRuntimeCommand, errMsg)
+	if err := cmd.Run(); err != nil {
+		return errors.Wrap(err, errors.ErrRuntimeCommand,
+			buildErrMsg(fmt.Sprintf("failed to remove image %s", image), stderr.String(), options.Debug))
 	}
 	return nil
 }
@@ -199,7 +172,8 @@ func (d *DockerRuntime) ListImages(ctx context.Context) ([]string, error) {
 	output, err := cmd.Output()
 	if err != nil {
 		if ee, ok := err.(*exec.ExitError); ok && len(ee.Stderr) > 0 {
-			return nil, errors.Wrap(err, errors.ErrRuntimeCommand, fmt.Sprintf("failed to list images: %s", string(ee.Stderr)))
+			return nil, errors.Wrap(err, errors.ErrRuntimeCommand,
+				fmt.Sprintf("failed to list images: %s", string(ee.Stderr)))
 		}
 		return nil, errors.Wrap(err, errors.ErrRuntimeCommand, "failed to list images")
 	}
@@ -209,15 +183,16 @@ func (d *DockerRuntime) ListImages(ctx context.Context) ([]string, error) {
 // Tag tags an image with a new name
 func (d *DockerRuntime) Tag(ctx context.Context, source, target string) error {
 	cmd := exec.CommandContext(ctx, d.command, "tag", source, target)
-	
 	if err := cmd.Run(); err != nil {
-		return errors.Wrap(err, errors.ErrRuntimeCommand, fmt.Sprintf("failed to tag image %s as %s", source, target))
+		return errors.Wrap(err, errors.ErrRuntimeCommand,
+			fmt.Sprintf("failed to tag image %s as %s", source, target))
 	}
-
 	return nil
 }
 
-// Login logs in to a container registry
+// Login logs in to a container registry.
+// The password is always delivered via stdin to prevent it appearing in the
+// process table (which would happen if passed as a -p flag argument).
 func (d *DockerRuntime) Login(ctx context.Context, registry string, options LoginOptions) error {
 	args := []string{"login"}
 
@@ -225,52 +200,48 @@ func (d *DockerRuntime) Login(ctx context.Context, registry string, options Logi
 		args = append(args, "-u", options.Username)
 	}
 
-	if options.PasswordStdin {
-		args = append(args, "--password-stdin")
-	} else if options.Password != "" {
-		args = append(args, "-p", options.Password)
+	if options.Insecure {
+		// Docker does not support --insecure directly; provide guidance.
+		fmt.Printf("Warning: Docker does not support --insecure flag directly. " +
+			"For HTTP registries, configure daemon.json insecureRegistries. " +
+			"For self-signed certificates, add certs to /etc/docker/certs.d/\n")
 	}
 
-	if options.Insecure {
-		// Docker 不支持 --insecure，需要通过环境变量或配置
-		// 对于 HTTP，需要配置 daemon.json
-		// 对于自签名证书，需要将证书添加到 /etc/docker/certs.d/
-		fmt.Printf("Warning: Docker does not support --insecure flag directly. " +
-			"For HTTP registries, configure daemon.json. " +
-			"For self-signed certificates, add certificates to /etc/docker/certs.d/\n")
+	// Always use --password-stdin to keep the credential out of the process table.
+	if options.Password != "" || options.PasswordStdin {
+		args = append(args, "--password-stdin")
 	}
 
 	args = append(args, registry)
-
 	cmd := exec.CommandContext(ctx, d.command, args...)
 
-	// 如果使用 --password-stdin，从 stdin 读取密码
-	if options.PasswordStdin && options.Password != "" {
+	if options.Password != "" {
 		cmd.Stdin = strings.NewReader(options.Password)
 	}
 
-	// Capture output for debug mode
-	var stdout, stderr bytes.Buffer
+	var stderr bytes.Buffer
 	if options.Debug {
-		cmd.Stdout = io.MultiWriter(os.Stdout, &stdout)
+		cmd.Stdout = os.Stdout
 		cmd.Stderr = io.MultiWriter(os.Stderr, &stderr)
 	} else {
-		// In non-debug mode, show output but capture errors
 		cmd.Stdout = os.Stdout
 		cmd.Stderr = &stderr
 	}
 
-	err := cmd.Run()
-	if err != nil {
-		errMsg := fmt.Sprintf("failed to login to registry %s", registry)
-		if options.Debug && (stdout.Len() > 0 || stderr.Len() > 0) {
-			errMsg += fmt.Sprintf("\nStdout:\n%s\nStderr:\n%s", stdout.String(), stderr.String())
-		} else if stderr.Len() > 0 {
-			errMsg += fmt.Sprintf("\nError: %s", stderr.String())
-		}
-		return errors.Wrap(err, errors.ErrRuntimeCommand, errMsg)
+	if err := cmd.Run(); err != nil {
+		return errors.Wrap(err, errors.ErrRuntimeCommand,
+			buildErrMsg(fmt.Sprintf("failed to login to registry %s", registry), stderr.String(), options.Debug))
 	}
+	return nil
+}
 
+// Logout logs out from a container registry
+func (d *DockerRuntime) Logout(ctx context.Context, registry string) error {
+	cmd := exec.CommandContext(ctx, d.command, "logout", registry)
+	if err := cmd.Run(); err != nil {
+		return errors.Wrap(err, errors.ErrRuntimeCommand,
+			fmt.Sprintf("failed to logout from registry %s", registry))
+	}
 	return nil
 }
 
@@ -281,6 +252,32 @@ func (d *DockerRuntime) Version() (string, error) {
 	if err != nil {
 		return "", errors.Wrap(err, errors.ErrRuntimeCommand, "failed to get Docker version")
 	}
-
 	return strings.TrimSpace(string(output)), nil
+}
+
+// applyProxyEnv sets HTTP/HTTPS proxy environment variables on cmd when proxy is enabled.
+func applyProxyEnv(cmd *exec.Cmd, proxy *ProxyConfig) {
+	if proxy == nil || !proxy.Enabled {
+		return
+	}
+	env := os.Environ()
+	if proxy.HTTP != "" {
+		env = append(env, fmt.Sprintf("http_proxy=%s", proxy.HTTP))
+	}
+	if proxy.HTTPS != "" {
+		env = append(env, fmt.Sprintf("https_proxy=%s", proxy.HTTPS))
+	}
+	cmd.Env = env
+}
+
+// buildErrMsg constructs an error message, appending stderr content when present.
+func buildErrMsg(base, stderr string, debug bool) string {
+	stderr = strings.TrimSpace(stderr)
+	if stderr == "" {
+		return base
+	}
+	if debug {
+		return fmt.Sprintf("%s\nStderr:\n%s", base, stderr)
+	}
+	return fmt.Sprintf("%s\nError: %s", base, stderr)
 }

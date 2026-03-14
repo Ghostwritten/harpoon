@@ -1,3 +1,4 @@
+// Package errors defines Harpoon error types and codes for runtime, config, and image operations.
 package errors
 
 import (

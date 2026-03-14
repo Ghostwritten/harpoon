@@ -11,14 +11,33 @@ jobs:
     runs-on: ubuntu-latest
     steps:
     - uses: actions/checkout@v4
-    
+
     - name: Set up Go
-      uses: actions/setup-go@v4
+      uses: actions/setup-go@v5
       with:
         go-version: '1.22'
-    
-    - name: Run tests
-      run: go test -v ./...
-    
+        cache: true
+
+    - name: Verify modules
+      run: go mod verify
+
+    - name: Check go mod tidy
+      run: go mod tidy && git diff --exit-code go.mod go.sum
+
     - name: Build
       run: go build -v ./cmd/hpn
+
+    - name: Vet
+      run: go vet ./...
+
+    - name: Test
+      run: go test -v ./...
+
+    - name: Test (race detector)
+      run: go test -race ./...
+
+    - name: Lint
+      uses: golangci/golangci-lint-action@v6
+      with:
+        version: latest
+        args: --timeout=5m

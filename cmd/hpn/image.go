@@ -5,27 +5,28 @@ import (
 	"strings"
 )
 
-// ImageParts 表示解析后的镜像组件
+// ImageParts holds parsed image components
 type ImageParts struct {
-	Registry string // 仓库地址（如 registry.com）
-	Path     string // 路径部分（如 project 或 path/to/project，可能为空）
-	Name     string // 镜像名（如 nginx）
-	Tag      string // 标签（如 latest）
+	Registry string // Registry address (e.g. registry.com)
+	Path     string // Path part (e.g. project or path/to/project, may be empty)
+	Name     string // Image name (e.g. nginx)
+	Tag      string // Tag (e.g. latest)
 }
 
-// parseImage 解析镜像名为组件，支持多级路径
-// 示例：
-//   - old-registry.com/project/nginx:latest -> {Registry: "old-registry.com", Path: "project", Name: "nginx", Tag: "latest"}
-//   - old-registry.com/path/to/nginx:latest -> {Registry: "old-registry.com", Path: "path/to", Name: "nginx", Tag: "latest"}
-//   - nginx:latest -> {Registry: "", Path: "", Name: "nginx", Tag: "latest"}
-//   - registry.com/nginx:latest -> {Registry: "registry.com", Path: "", Name: "nginx", Tag: "latest"}
+// parseImage parses an image reference into components, supporting multi-level paths.
+// Examples:
+//
+//	old-registry.com/project/nginx:latest -> {Registry: "old-registry.com", Path: "project", Name: "nginx", Tag: "latest"}
+//	old-registry.com/path/to/nginx:latest -> {Registry: "old-registry.com", Path: "path/to", Name: "nginx", Tag: "latest"}
+//	nginx:latest -> {Registry: "", Path: "", Name: "nginx", Tag: "latest"}
+//	registry.com/nginx:latest -> {Registry: "registry.com", Path: "", Name: "nginx", Tag: "latest"}
 func parseImage(image string) ImageParts {
 	parts := ImageParts{}
 
-	// 分离 tag
+	// Split tag from image
 	tagIndex := strings.LastIndex(image, ":")
 	if tagIndex > 0 && tagIndex < len(image)-1 {
-		// 检查 : 后面是否有 /，如果没有则认为是 tag
+		// If nothing after : contains /, treat it as tag
 		afterColon := image[tagIndex+1:]
 		if !strings.Contains(afterColon, "/") {
 			parts.Tag = afterColon
@@ -33,21 +34,21 @@ func parseImage(image string) ImageParts {
 		}
 	}
 	if parts.Tag == "" {
-		parts.Tag = "latest" // 默认 tag
+		parts.Tag = "latest" // default tag
 	}
 
-	// 分离 registry 和路径
+	// Split registry and path
 	imageParts := strings.Split(image, "/")
 	if len(imageParts) == 1 {
-		// 只有镜像名，如 nginx
+		// Image name only (e.g. nginx)
 		parts.Name = imageParts[0]
 		return parts
 	}
 
-	// 判断第一部分是否是 registry（包含 . 或 : 或 localhost）
+	// Check if first part is registry (contains . or : or is localhost)
 	firstPart := imageParts[0]
 	if strings.Contains(firstPart, ".") || strings.Contains(firstPart, ":") || firstPart == "localhost" {
-		// 第一部分是 registry
+		// First part is registry
 		parts.Registry = firstPart
 		if len(imageParts) == 2 {
 			// registry/image
@@ -58,7 +59,7 @@ func parseImage(image string) ImageParts {
 			parts.Name = imageParts[len(imageParts)-1]
 		}
 	} else {
-		// 第一部分不是 registry，可能是路径的一部分
+		// First part is not registry, likely part of path
 		if len(imageParts) == 2 {
 			// path/image
 			parts.Path = imageParts[0]
@@ -73,45 +74,45 @@ func parseImage(image string) ImageParts {
 	return parts
 }
 
-// buildTargetImage 构建目标镜像名
-// 实现三种命名模式：
-//   1. 统一项目模式：如果指定了 project，所有镜像统一推送到 registry/project/image:tag
-//   2. 追加路径模式：如果 registry 包含路径，在原有路径前追加
-//   3. 默认保持路径模式：只替换仓库，保持原有路径结构
+// buildTargetImage builds the target image name.
+// Three modes:
+//  1. Unified project: if project is set, push all to registry/project/image:tag
+//  2. Append path: if registry contains path, prepend to original path
+//  3. Default preserve: replace registry only, keep original path structure
 func buildTargetImage(sourceImage, registry, project string) string {
-	// 解析源镜像
+	// Parse source image
 	sourceParts := parseImage(sourceImage)
 
-	// 场景1: 指定了 --project，统一替换项目
+	// Mode 1: --project specified, unified project
 	if project != "" {
-		// 提取 registry 的基础部分（如果 registry 包含路径，只取基础部分）
+		// Extract base registry (if registry has path, take base only)
 		baseRegistry := extractRegistryBase(registry)
 		return fmt.Sprintf("%s/%s/%s:%s",
 			baseRegistry, // new-registry.com
-			project,      // newproject
+			project,     // newproject
 			sourceParts.Name,
 			sourceParts.Tag)
 	}
 
-	// 场景2: --registry 包含路径（如 new-registry.com/path/xx）
+	// Mode 2: --registry contains path (e.g. new-registry.com/path/xx)
 	if hasPath(registry) {
-		// 追加路径模式
+		// Append path mode
 		if sourceParts.Path != "" {
 			return fmt.Sprintf("%s/%s/%s:%s",
 				registry,         // new-registry.com/path/xx
-				sourceParts.Path, // project (原有路径)
+				sourceParts.Path, // original path
 				sourceParts.Name,
 				sourceParts.Tag)
 		}
-		// 如果源镜像没有路径，直接追加
+		// Source has no path, append directly
 		return fmt.Sprintf("%s/%s:%s",
 			registry,
 			sourceParts.Name,
 			sourceParts.Tag)
 	}
 
-	// 场景3: 默认模式，只替换仓库，保持路径
-	// 如果源镜像没有路径，则直接 registry/name:tag
+	// Mode 3: Default, replace registry only, preserve path
+	// If source has no path: registry/name:tag
 	if sourceParts.Path == "" {
 		return fmt.Sprintf("%s/%s:%s",
 			registry,
@@ -119,27 +120,27 @@ func buildTargetImage(sourceImage, registry, project string) string {
 			sourceParts.Tag)
 	}
 
-	// 如果源镜像有路径，保持路径
+	// Source has path, preserve it
 	return fmt.Sprintf("%s/%s/%s:%s",
 		registry,         // new-registry.com
-		sourceParts.Path, // project (保持原有路径)
+		sourceParts.Path, // original path
 		sourceParts.Name,
 		sourceParts.Tag)
 }
 
-// extractRegistryBase 从 registry 中提取基础仓库名
-// 例如：new-registry.com/path/xx -> new-registry.com
+// extractRegistryBase extracts the base registry from a registry string.
+// E.g. new-registry.com/path/xx -> new-registry.com
 func extractRegistryBase(registry string) string {
 	parts := strings.Split(registry, "/")
 	return parts[0]
 }
 
-// hasPath 检查 registry 是否包含路径
+// hasPath returns true if registry contains a path
 func hasPath(registry string) bool {
 	return strings.Contains(registry, "/")
 }
 
-// parseImageNameAndTag 解析镜像名和标签（保持向后兼容）
+// parseImageNameAndTag parses image name and tag (for backward compatibility)
 func parseImageNameAndTag(image string) (string, string) {
 	parts := parseImage(image)
 	if parts.Path != "" {
@@ -148,13 +149,13 @@ func parseImageNameAndTag(image string) (string, string) {
 	return parts.Name, parts.Tag
 }
 
-// extractProjectFromImage 从镜像中提取项目名（保持向后兼容）
+// extractProjectFromImage extracts project name from image (for backward compatibility)
 func extractProjectFromImage(image string) string {
 	parts := parseImage(image)
 	if parts.Path != "" {
-		// 返回路径的第一部分作为项目名
+		// Return first segment of path as project
 		pathParts := strings.Split(parts.Path, "/")
 		return pathParts[0]
 	}
-	return "library" // 默认项目名
+	return "library" // default project
 }

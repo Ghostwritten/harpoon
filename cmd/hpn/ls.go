@@ -42,9 +42,8 @@ var lsCmd = &cobra.Command{
 
 func init() {
 	lsCmd.Flags().StringVar(&lsPath, "path", "", "Directory path containing saved tar files (for list-path or check mode)")
-	lsCmd.Flags().StringVarP(&lsFile, "file", "f", "", "Image list file (for check mode: verify each image exists)")
+	lsCmd.Flags().StringVarP(&lsFile, "file", "f", "", "Image list file (for check mode; use - for stdin)")
 	lsCmd.Flags().StringVarP(&lsOutput, "output", "o", "table", "Output format: table, plain")
-	rootCmd.AddCommand(lsCmd)
 }
 
 func selectLsRuntime() (containerruntime.ContainerRuntime, error) {

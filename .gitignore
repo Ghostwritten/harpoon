@@ -4,8 +4,8 @@
 *.dll
 *.so
 *.dylib
-hpn
-hpn-*
+/hpn
+/hpn-*
 
 # Test binary, built with `go test -c`
 *.test

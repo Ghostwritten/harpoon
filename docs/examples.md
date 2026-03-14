@@ -49,6 +49,13 @@ hpn save -f web-images.txt
 hpn push -f web-images.txt
 ```
 
+### Load Checksum Verification
+By default, `hpn load` verifies tar files against their `.sha256` checksum files when present. Use `--skip-verify` to bypass verification (e.g. for tar files saved without checksums).
+```bash
+hpn load --path ./images
+hpn load --path ./images --skip-verify
+```
+
 ### Passthrough Args (pull / save / push)
 Pass extra flags to the underlying runtime by placing them after `--`. You can also set `runtime.extra_args` in config.
 
@@ -60,28 +67,31 @@ hpn push -f images.txt --registry harbor.company.com -- --tls-verify=false
 
 Interpretation of these args is up to the underlying tool (docker/podman/nerdctl/skopeo).
 
+Push uses the same retry and timeout configuration as pull (`runtime.retry`, `runtime.timeout` in config) for resilience against network failures.
+
 ### Get Image List from Helm Chart
 
 Extract image references from a Helm chart (remote or local) and use the list with pull/save/push. Requires [Helm](https://helm.sh) CLI to be installed.
 
 ```bash
 # From a remote chart (repo/name + version)
-hpn list-images --chart bitnami/nginx --version 15.0.0 -o images.txt
+hpn extract --chart bitnami/nginx --version 15.0.0 -o images.txt
 hpn pull -f images.txt
 hpn save -f images.txt --path ./images
 
 # From a local chart directory or .tgz
-hpn list-images --chart ./mychart -o images.txt
-hpn list-images --chart ./mychart-1.0.0.tgz -f values-prod.yaml -o images.txt
+hpn extract --chart ./mychart -o images.txt
+hpn extract --chart ./mychart-1.0.0.tgz -f values-prod.yaml -o images.txt
 
 # With custom values files (passed to helm template)
-hpn list-images --chart bitnami/nginx --version 15.0.0 -f values.yaml -f prod.yaml -o images.txt
+hpn extract --chart bitnami/nginx --version 15.0.0 -f values.yaml -f prod.yaml -o images.txt
 
-# Write to stdout (e.g. pipe to pull)
-hpn list-images --chart ./mychart -o - | hpn pull -f /dev/stdin
+# Write to stdout and pipe to pull (use -f - for stdin)
+hpn extract --chart ./mychart -o - | hpn pull -f -
+hpn extract --chart bitnami/nginx --version 15.0.0 -o - | hpn save -f - --path ./images
 ```
 
-Output is one image per line, compatible with `hpn pull -f` and `hpn push -f`.
+Output is one image per line, compatible with `hpn pull -f`, `hpn save -f`, `hpn push -f`, and `hpn rmi -f`. Use `-f -` to read the image list from stdin.
 
 ## Development Workflows
 

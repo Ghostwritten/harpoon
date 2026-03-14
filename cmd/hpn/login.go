@@ -35,7 +35,6 @@ func init() {
 	loginCmd.Flags().StringVarP(&loginPassword, "password", "p", "", "Registry password (not recommended, use --password-stdin or interactive input)")
 	loginCmd.Flags().BoolVar(&loginPasswordStdin, "password-stdin", false, "Read password from stdin")
 	loginCmd.Flags().BoolVar(&loginInsecure, "insecure", false, "Allow connections to registries without TLS or with self-signed certificates")
-	rootCmd.AddCommand(loginCmd)
 }
 
 func executeLogin(cmd *cobra.Command, args []string) error {

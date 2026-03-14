@@ -29,6 +29,7 @@ type RuntimeExtraArgs struct {
 	Pull []string `yaml:"pull" json:"pull" mapstructure:"pull"`
 	Save []string `yaml:"save" json:"save" mapstructure:"save"`
 	Push []string `yaml:"push" json:"push" mapstructure:"push"`
+	Rmi  []string `yaml:"rmi" json:"rmi" mapstructure:"rmi"`
 }
 
 // RuntimeConfig contains container runtime settings

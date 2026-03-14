@@ -11,6 +11,39 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 - **list-images → extract**: The subcommand that extracts image list from Helm charts has been renamed to `extract`. The name `list-images` remains available as an alias for backward compatibility.
 
+## [v2.0.3] - 2026-03-14
+
+### Added
+
+- **`hpn logout` command**: Logs out from a registry using the active container runtime (`hpn logout registry.example.com`).
+- **Generic worker pool** (`cmd/hpn/worker.go`): `runWorkerPool[J any]` replaces the duplicated goroutine+channel pattern across pull, push, save, and load; honours context cancellation.
+- **Retry-with-backoff utility** (`cmd/hpn/retry.go`): `retryWithBackoff` uses `select { case <-ctx.Done() }` during sleep so Ctrl+C during a backoff wait returns immediately.
+- **`Logout` method** on `ContainerRuntime` interface — all four runtimes implement it.
+- **Tests**: `worker_test.go` (8 cases) and `retry_test.go` (7 cases).
+
+### Changed
+
+- **`ContainerRuntime.Load()` signature**: Added `imageName string` parameter. Docker, Podman, and Nerdctl ignore it; Skopeo uses it as the copy destination reference.
+- **`--output` flag for `hpn save`**: Marked deprecated via Cobra's `MarkDeprecated`; `--path` is now the canonical flag. Backwards-compatible during a transition period.
+- **SIGINT / SIGTERM handling**: `signal.NotifyContext` now cancels the active operation immediately on Ctrl+C instead of waiting for the current subprocess to finish.
+- **CI workflow**: `go test -race ./...` and `golangci-lint` added as required checks; `actions/setup-go` upgraded to v5 with caching.
+
+### Fixed
+
+- **`readImageList` wrong line numbers**: Validation now runs on pre-deduplication lines with original line numbers tracked per entry.
+- **Skopeo `Pull()` no-op**: Previously copied to `/tmp` then immediately deleted; now copies directly to the first available daemon store.
+- **Nerdctl unconditional `--insecure-registry`**: Removed from `Pull()` and `Push()` defaults; TLS is now verified by default.
+- **Duplicate `--path`/`--output` flags in `save`**: Resolved silent conflict; `--output` deprecated, `--path` is canonical.
+- **Dead code in `checksum.go`**: Removed `verifyChecksum` (duplicate of `VerifyTarChecksum`) and `trimWhitespace` (reimplemented `strings.TrimSpace`).
+
+### Security
+
+- **Password exposure in process table**: All runtimes now use `--password-stdin` — credentials never appear in `ps` output.
+- **TOCTOU / symlink attacks in Skopeo**: Replaced predictable `/tmp/skopeo-*` paths with `os.MkdirTemp("", "hpn-skopeo-*")`.
+- **Save directory permissions**: `os.MkdirAll(saveDir, 0700)` — was `0755`.
+- **Checksum file permissions**: Written with `0600` — was `0644`.
+- **Auth directory permissions**: `os.MkdirAll(dir, 0700)` — was `0755`.
+
 ## [v2.0.2] - 2025-02-13
 
 ### Added

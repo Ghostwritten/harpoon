@@ -60,7 +60,7 @@ func ReadAuthConfig(authFile string) (*AuthConfig, error) {
 func WriteAuthConfig(authFile string, config *AuthConfig) error {
 	// Ensure directory exists
 	dir := filepath.Dir(authFile)
-	if err := os.MkdirAll(dir, 0755); err != nil {
+	if err := os.MkdirAll(dir, 0700); err != nil {
 		return fmt.Errorf("failed to create auth directory: %v", err)
 	}
 
