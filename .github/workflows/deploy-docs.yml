@@ -5,10 +5,14 @@ on:
     branches: [main]
     paths:
       - 'website/**'
+      - 'docs/**'
+      - 'README.md'
       - '.github/workflows/deploy-docs.yml'
 
 permissions:
   contents: write   # Required for pushing to gh-pages branch
+  pages: write      # Required for GitHub Pages deployment
+  id-token: write   # Required for OIDC token in Pages deployment
 
 jobs:
   build-and-deploy:

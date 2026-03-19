@@ -28,11 +28,14 @@ Thank you for your interest in contributing. This document covers how to get sta
 ## Code style and quality
 
 - **Formatting:** Format Go code with `gofmt` or `go fmt ./...`. Code and comments in the codebase are in **English**.
-- **Linting:** Run the standard vet before submitting:
+- **Linting:** CI enforces `golangci-lint`. Run locally before opening a PR:
   ```bash
   go vet ./...
+  golangci-lint run --timeout=5m
+  # or via Makefile:
+  make lint
   ```
-  Optionally, run a broader linter such as `golangci-lint run` (if configured) for consistency with CI.
+  The configuration is in `.golangci.yml` at the repo root.
 
 ## Submitting changes
 

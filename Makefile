@@ -1,4 +1,4 @@
-.PHONY: build build-all build-current clean test help install
+.PHONY: build build-all build-current clean test lint help install
 
 # Default target
 help:
@@ -10,6 +10,7 @@ help:
 	@echo "  make build-all    - Build for all platforms"
 	@echo "  make clean        - Clean build artifacts"
 	@echo "  make test         - Run tests"
+	@echo "  make lint         - Run golangci-lint (mirrors CI)"
 	@echo "  make install      - Install to /usr/local/bin (requires sudo)"
 	@echo ""
 	@echo "Note: All binaries are output to the dist/ directory"
@@ -27,6 +28,9 @@ clean:
 
 test:
 	@go test ./...
+
+lint:
+	@golangci-lint run --timeout=5m
 
 install: build-current
 	@if [ -f "dist/hpn" ]; then \
